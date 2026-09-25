@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 
-const ENGINE_URL = process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://localhost:8000";
+const ENGINE_URL = (process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
 function secret() {
   const s = process.env.ENGINE_SECRET;
@@ -31,6 +31,7 @@ export async function engineInternal(pathname: string, body: unknown) {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Engine-Secret": secret() },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(5000), // движок недоступен — не держим регистрацию
   });
   if (!res.ok) throw new Error(`движок ответил ${res.status}`);
   return res.json();

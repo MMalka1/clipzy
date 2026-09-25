@@ -10,10 +10,17 @@ import { Pool } from "pg";
  * Локально — файл SQLite в data/ (встроен в Node, ничего ставить не нужно).
  */
 export const pg = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 5 }) : null;
+// Neon закрывает простаивающие соединения — без обработчика это роняет функцию
+pg?.on("error", (e) => console.error("[db] соединение с базой оборвалось:", e.message));
 
 let sqlite: DatabaseSync | null = null;
+// Работающий сайт на Vercel (не сборка): там файлы не сохраняются, SQLite нельзя
+const onVercelRuntime = Boolean(process.env.VERCEL) && process.env.NEXT_PHASE !== "phase-production-build";
 
 function localDb(): DatabaseSync {
+  if (onVercelRuntime) {
+    throw new Error("DATABASE_URL не задан: подключите Neon (Storage → Neon) и сделайте Redeploy");
+  }
   if (!sqlite) {
     // node:sqlite грузим только локально — на сервере с Postgres он не нужен
     const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
@@ -24,8 +31,12 @@ function localDb(): DatabaseSync {
   return sqlite;
 }
 
-/** База для Better Auth */
-export const authDatabase = pg ?? localDb();
+/** База для Better Auth. На Vercel без DATABASE_URL — понятная ошибка в логах вместо падения на записи в файл. */
+export const authDatabase = pg ?? (onVercelRuntime ? missingDatabase() : localDb());
+
+function missingDatabase(): never {
+  throw new Error("DATABASE_URL не задан: подключите Neon (Storage → Neon) и сделайте Redeploy");
+}
 
 /** Лист ожидания. added=false — адрес уже был в списке. */
 export async function addToWaitlist(email: string): Promise<{ added: boolean }> {

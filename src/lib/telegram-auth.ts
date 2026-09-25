@@ -6,6 +6,7 @@ import { setSessionCookie } from "better-auth/cookies";
 import type { Locale } from "@/i18n/config";
 import auth from "@/i18n/dict/auth";
 import { getLocale } from "@/i18n/server";
+import { isLocalPath } from "./safe-path";
 
 /**
  * Вход через Telegram Login Widget.
@@ -68,7 +69,7 @@ export const telegramAuth = () =>
         const session = await ctx.context.internalAdapter.createSession(user.id);
         await setSessionCookie(ctx, { session, user });
         const next = String(ctx.query?.callbackURL || "/app");
-        throw ctx.redirect(next.startsWith("/") ? next : "/app");
+        throw ctx.redirect(isLocalPath(next) ? next : "/app"); // только свои пути, не //чужой-сайт
       }),
     },
   }) satisfies BetterAuthPlugin;

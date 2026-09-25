@@ -4,6 +4,11 @@ import "server-only";
 export async function sendMail(to: string, subject: string, text: string, link?: string) {
   const host = process.env.SMTP_HOST;
   if (!host) {
+    if (process.env.VERCEL) {
+      // на сервере логи видят не только вы — ссылку с токеном туда не пишем
+      console.warn(`[mail] SMTP не настроен — письмо «${subject}» не отправлено`);
+      return;
+    }
     console.log(`\n📧 Письмо для ${to}\n   Тема: ${subject}\n   ${text}${link ? `\n   Ссылка: ${link}` : ""}\n`);
     return;
   }

@@ -113,6 +113,9 @@ function keepIntervals(phrases: Phrase[], range: Range, removePauses: boolean, r
   return out.filter((r) => r.end - r.start > 0.05);
 }
 
+/** Сайт открыт локально (тогда движок — на этом же компьютере и подсказка про start-engine.bat уместна) */
+const isLocalSite = () => typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+
 /** Время исходника → время готового рилса. */
 function mapTime(t: number, intervals: Range[]) {
   let acc = 0;
@@ -759,12 +762,17 @@ export default function Editor() {
                 <div className="flex items-start gap-3">
                   <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-signal" aria-hidden="true" />
                   <div>
-                    <p className="font-medium">{t.engineOffTitle}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-dim">
-                      {t.engineOffOpen} <span className="font-mono text-fg">clipzy-engine</span> {t.engineOffRun}{" "}
-                      <span className="font-mono text-fg">start-engine.bat</span>
-                      {t.engineOffTail}
-                    </p>
+                    <p className="font-medium">{isLocalSite() ? t.engineOffTitle : t.engineOffPublicTitle}</p>
+                    {isLocalSite() ? (
+                      <p className="mt-1 text-sm leading-relaxed text-dim">
+                        {t.engineOffOpen} <span className="font-mono text-fg">clipzy-engine</span> {t.engineOffRun}{" "}
+                        <span className="font-mono text-fg">start-engine.bat</span>
+                        {t.engineOffTail}
+                      </p>
+                    ) : (
+                      // Посетителям публичного сайта инструкция про start-engine.bat ни к чему
+                      <p className="mt-1 text-sm leading-relaxed text-dim">{t.engineOffPublicText}</p>
+                    )}
                     <button
                       onClick={checkEngine}
                       className="mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-md border border-line-strong px-3 text-sm transition-colors hover:bg-raised"

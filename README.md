@@ -32,6 +32,7 @@ npm run dev
 | `TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_BOT` | Вход через Telegram (необязательно) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Письма: подтверждение почты и сброс пароля |
 
-4. **Движок.** В `clipzy-engine/.env` добавьте `CLIPZY_SITE_ORIGINS=https://<ваш-домен>.vercel.app`, чтобы движок принимал запросы с сайта.
+4. **Redeploy.** Deployments → ⋯ у последнего деплоя → Redeploy: переменные окружения (особенно `NEXT_PUBLIC_*`) подхватываются только при новой сборке.
+5. **Движок.** В `clipzy-engine/.env` добавьте `CLIPZY_SITE_ORIGINS=https://<ваш-домен>.vercel.app`, чтобы движок принимал запросы с сайта.
 
 Пока движок недоступен, сайт работает (лендинг, вход, профиль), а редактор показывает «Движок обработки не запущен».

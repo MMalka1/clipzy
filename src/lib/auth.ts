@@ -88,9 +88,24 @@ const options = {
 
 export const auth = betterAuth(options);
 
-/** Таблицы создаются автоматически при первом обращении. */
+/** Таблицы создаются автоматически при первом обращении.
+ *  Ошибку не кэшируем (обрыв связи с базой, гонка двух холодных стартов) — следующий запрос попробует снова. */
 let ready: Promise<void> | null = null;
+async function migrate() {
+  for (let i = 0; ; i++) {
+    try {
+      await (await getMigrations(options)).runMigrations();
+      return;
+    } catch (e) {
+      if (i >= 2) throw e;
+      await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+  }
+}
 export function authReady() {
-  ready ??= getMigrations(options).then((m) => m.runMigrations());
+  ready ??= migrate().catch((e) => {
+    ready = null;
+    throw e;
+  });
   return ready;
 }

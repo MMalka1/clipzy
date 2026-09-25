@@ -5,6 +5,7 @@ import Logo from "@/components/Logo";
 import { getProviders } from "@/lib/providers";
 import { getLocale } from "@/i18n/server";
 import auth from "@/i18n/dict/auth";
+import { isLocalPath } from "@/lib/safe-path";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: auth[await getLocale()].meta.loginTitle };
@@ -12,7 +13,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
-  const next = typeof params.next === "string" && params.next.startsWith("/") ? params.next : "/app";
+  // Только свои пути: «//evil.com» тоже начинается с «/», но уводит на чужой сайт
+  const next = typeof params.next === "string" && isLocalPath(params.next) ? params.next : "/app";
   const mode = params.mode === "signin" ? "signin" : "signup";
   const verified = params.verified === "1";
   const t = auth[await getLocale()].login;
