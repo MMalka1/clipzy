@@ -1,0 +1,463 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0b0b;
+  --color-panel: #121212;
+  --color-raised: #181818;
+  --color-hover: #1f1f1f;
+  --color-line: #262626;
+  --color-line-strong: #333333;
+  --color-fg: #ededed;
+  --color-dim: #9a9a9a;
+  --color-faint: #6b6b6b;
+  --color-signal: #f9dc0c; /* фирменный жёлтый из логотипа */
+  --color-on-signal: #0b0b0b; /* текст на жёлтом — тёмный в любой теме */
+  --color-rec: #ff453a;
+
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-logo: var(--font-unbounded), var(--font-onest), sans-serif;
+  --font-hand: var(--font-caveat), cursive;
+
+  --animate-blink: blink 1.2s steps(2, start) infinite;
+}
+
+/* ——— «Бумага»: светлая тема для сайта. Меняем только токены — компоненты подстраиваются сами ——— */
+.paper {
+  --color-ink: #f3eee3;
+  --color-panel: #fbf8f1;
+  --color-raised: #ebe4d6;
+  --color-hover: #e4dccc;
+  --color-line: #dbd2c1;
+  --color-line-strong: #c7bca8;
+  --color-fg: #17140f;
+  --color-dim: #5c5549;
+  --color-faint: #857d70;
+  --color-rec: #cf3e1e;
+  position: relative;
+  isolation: isolate;
+  background: var(--color-ink);
+  color: var(--color-fg);
+}
+/* Зерно бумаги — едва заметное */
+.paper::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.28  0 0 0 0.35 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");
+}
+body:has(.paper) {
+  background: #f3eee3;
+}
+
+/* Маркер от руки: неровные края, лёгкий наклон */
+.marker {
+  position: relative;
+  white-space: nowrap;
+}
+.marker::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0.12em -0.14em 0.02em -0.1em;
+  background: var(--color-signal);
+  border-radius: 0.5em 0.2em 0.6em 0.25em / 0.3em 0.55em 0.25em 0.6em;
+  transform: rotate(-1.4deg) skewX(-6deg);
+}
+
+/* Кусочек скотча */
+.tape {
+  position: absolute;
+  z-index: 2;
+  width: 92px;
+  height: 26px;
+  background: rgba(236, 222, 184, 0.78);
+  box-shadow: 0 1px 2px rgba(80, 60, 20, 0.12);
+  backdrop-filter: blur(1px);
+}
+
+/* «Фото» на бумаге: белая рамка и тёплая тень */
+.photo {
+  background: #fff;
+  padding: 8px;
+  box-shadow:
+    0 1px 1px rgba(60, 40, 10, 0.08),
+    0 18px 38px -16px rgba(60, 40, 10, 0.45);
+}
+
+/* Точки-заполнители, как в прайсе */
+.leader {
+  flex: 1;
+  min-width: 1.5rem;
+  border-bottom: 2px dotted var(--color-line-strong);
+  transform: translateY(-0.3em);
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--color-signal);
+  color: #000;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* «Кадр» вертикального клипа: расфокусированная студия + зерно */
+.frame-bg {
+  background:
+    radial-gradient(60% 40% at 70% 22%, rgba(255, 196, 120, 0.22), transparent 70%),
+    radial-gradient(50% 35% at 20% 70%, rgba(120, 150, 255, 0.12), transparent 70%),
+    linear-gradient(180deg, #1d1b19 0%, #121212 55%, #0d0d0d 100%);
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* ——— Стили субтитров ——— */
+.cap {
+  text-align: center;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.cap-w {
+  display: inline-block;
+  margin: 0 0.16em;
+  transition: color 120ms, background-color 120ms, transform 120ms;
+}
+
+/* Бит: жирный капс, активное слово жёлтое */
+.cap-beat {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cap-beat .cap-w {
+  margin: 0 0.24em;
+}
+.cap-beat .cap-w {
+  color: var(--cap-text, #fff);
+  text-shadow: 0 0.06em 0 #000, 0 0 0.4em rgba(0, 0, 0, 0.6);
+}
+.cap-beat .cap-w.on {
+  color: var(--cap-accent, #ffd60a);
+  transform: scale(1.08);
+}
+
+/* Плашка: активное слово на жёлтой подложке */
+.cap-box {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cap-box .cap-w {
+  color: var(--cap-text, #fff);
+  padding: 0.02em 0.14em;
+  border-radius: 0.14em;
+  text-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.7);
+}
+.cap-box .cap-w.on {
+  background: var(--cap-accent, #ffd60a);
+  color: var(--cap-ink, #111);
+  text-shadow: none;
+}
+
+/* Контур: обычный регистр, белый с чёрной обводкой */
+.cap-outline {
+  font-weight: 700;
+}
+.cap-outline .cap-w {
+  color: var(--cap-text, #fff);
+  -webkit-text-stroke: 0.12em #000;
+  paint-order: stroke fill;
+}
+.cap-outline .cap-w.on {
+  color: var(--cap-accent, #7ee0ff);
+}
+
+/* Караоке: сказанное — белое, несказанное — приглушённое */
+.cap-karaoke {
+  font-weight: 800;
+}
+.cap-karaoke .cap-w {
+  color: rgba(255, 255, 255, 0.35);
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.6);
+}
+.cap-karaoke .cap-w.past {
+  color: var(--cap-text, #fff);
+}
+.cap-karaoke .cap-w.on {
+  color: var(--cap-accent, #fff);
+}
+
+/* Минимал: мелкий строчный текст */
+.cap-minimal {
+  font-weight: 600;
+  font-size: 0.92em;
+  text-transform: lowercase;
+}
+.cap-minimal .cap-w {
+  margin: 0 0.1em;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+}
+.cap-minimal .cap-w.on {
+  text-decoration: underline;
+  color: var(--cap-text, #fff);
+  text-decoration-color: var(--cap-accent, #ffd60a);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
+}
+
+/* Неон: плотные буквы с коротким свечением */
+.cap-neon {
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.cap-neon .cap-w {
+  --glow: var(--cap-accent, #00e1ff);
+  color: color-mix(in srgb, var(--glow) 18%, #fff);
+  text-shadow:
+    0 0 0.03em #fff,
+    0 0 0.12em var(--glow),
+    0 0 0.3em color-mix(in srgb, var(--glow) 85%, transparent),
+    0 0 0.6em color-mix(in srgb, var(--glow) 50%, transparent);
+}
+.cap-neon .cap-w.on {
+  --glow: var(--cap-glow2, #ff3dcf);
+  color: #fff;
+}
+
+/* Комикс: жёлтые наклонённые буквы с толстой обводкой */
+.cap-comic {
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.2;
+  transform: rotate(-3deg);
+}
+.cap-comic .cap-w {
+  color: var(--cap-accent, #ffe14d);
+  -webkit-text-stroke: 0.1em #000;
+  paint-order: stroke fill;
+  text-shadow: 0.07em 0.07em 0 #000;
+  margin: 0 0.2em;
+}
+.cap-comic .cap-w.on {
+  color: var(--cap-text, #fff);
+  transform: scale(1.08);
+}
+
+/* Стикеры: каждое слово на своей чёрной плашке, активное — цветное */
+.cap-typewriter {
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.cap-typewriter .cap-w {
+  margin: 0.06em 0.1em;
+  padding: 0.1em 0.3em;
+  border-radius: 0.14em;
+  background: #000;
+  color: var(--cap-text, #fff);
+}
+.cap-typewriter .cap-w.on {
+  background: var(--cap-accent, #ffd60a);
+  color: var(--cap-ink, #111);
+}
+
+/* Маркер: активное слово закрашено маркером от руки */
+.cap-marker {
+  font-weight: 800;
+}
+.cap-marker .cap-w {
+  color: var(--cap-text, #fff);
+  padding: 0 0.12em;
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
+}
+.cap-marker .cap-w.on {
+  color: var(--cap-ink, #111);
+  text-shadow: none;
+  background: var(--cap-accent, #ffd60a);
+  border-radius: 0.35em 0.12em 0.4em 0.16em / 0.2em 0.45em 0.15em 0.4em;
+  transform: rotate(-2deg);
+  box-shadow: 0.05em 0.06em 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Подкаст: вся фраза на тёмной подложке */
+.cap-podcast,
+.cap-glass {
+  width: fit-content;
+  max-width: calc(100% - 0.5rem);
+  margin-inline: auto;
+}
+.cap-podcast {
+  font-weight: 600;
+  padding: 0.3em 0.55em;
+  border-radius: 0.3em;
+  background: rgba(0, 0, 0, 0.78);
+}
+.cap-podcast .cap-w {
+  margin: 0 0.1em;
+  color: var(--cap-text, #fff);
+}
+.cap-podcast .cap-w.on {
+  color: var(--cap-accent, #ffd60a);
+}
+
+/* Стекло: прозрачная капсула, активное слово — в белой «таблетке» */
+.cap-glass {
+  font-weight: 700;
+  padding: 0.22em;
+  border-radius: 0.9em;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0.5em 1.4em rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+}
+.cap-glass .cap-w {
+  margin: 0;
+  padding: 0.14em 0.42em;
+  border-radius: 0.7em;
+  color: rgba(255, 255, 255, 0.85);
+}
+.cap-glass .cap-w.on {
+  background: var(--cap-accent, #fff);
+  color: var(--cap-ink, #111);
+  box-shadow: 0 0.15em 0.5em rgba(0, 0, 0, 0.25);
+}
+
+/* Ретро: оранжевый с объёмной тенью */
+.cap-retro {
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  transform: skewX(-8deg);
+}
+.cap-retro .cap-w {
+  color: var(--cap-accent, #ff8a3d);
+  text-shadow: 0.05em 0.05em 0 #7a2400, 0.1em 0.1em 0 #000;
+}
+.cap-retro .cap-w.on {
+  color: #ffd60a;
+}
+
+/* Одно слово: видно только текущее слово — крупно, капсом, с толстой обводкой.
+   Без акцента слово цвета текста. Движок: STYLES["pop"] в captions_render.py */
+.cap-pop {
+  display: flex;
+  justify-content: center; /* слишком длинное слово выходит за края поровну */
+  align-items: center;
+  font-size: 1.8em;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.cap-pop .cap-w {
+  display: none;
+  margin: 0;
+}
+.cap-pop .cap-w.on {
+  display: inline-block;
+  flex: none;
+  color: var(--cap-accent, var(--cap-text, #fff));
+  -webkit-text-stroke: 0.16em #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0.08em 0 #000,
+    0 0.12em 0.4em rgba(0, 0, 0, 0.55);
+}
+
+/* Жирный: толстая чёрная обводка и «выдавленная» вниз жёсткая тень; активное слово белое и крупнее */
+.cap-mrbeast {
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.22;
+}
+.cap-mrbeast .cap-w {
+  margin: 0 0.24em;
+  color: var(--cap-accent, #ffd60a);
+  -webkit-text-stroke: 0.22em #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0.05em 0 #000,
+    0.02em 0.1em 0 #000,
+    0.03em 0.15em 0 #000;
+}
+.cap-mrbeast .cap-w.on {
+  color: var(--cap-text, #fff);
+  transform: scale(1.08);
+}
+
+/* Градиент: светлый текст, активное слово залито вертикальным градиентом из акцента в более тёплый оттенок */
+.cap-gradient {
+  font-weight: 800;
+}
+.cap-gradient .cap-w {
+  color: var(--cap-text, #fff);
+  text-shadow:
+    0 0.04em 0.08em rgba(0, 0, 0, 0.55),
+    0 0.08em 0.4em rgba(0, 0, 0, 0.45);
+}
+.cap-gradient .cap-w.on {
+  --g: var(--cap-accent, #ffd60a);
+  color: transparent;
+  text-shadow: none; /* у текста с background-clip тень легла бы поверх заливки — берём drop-shadow */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--g) 45%, #fff) 20%,
+    var(--g) 50%,
+    color-mix(in hsl, var(--g) 55%, #ff3d6e) 85%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0.06em 0.1em rgba(0, 0, 0, 0.55));
+  transform: scale(1.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
