@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import DemoReel from "@/components/DemoReel";
+import IntroVideo from "@/components/IntroVideo";
 import { HandArrow, HandCheck, Note } from "@/components/Hand";
 import LangSwitch from "@/components/LangSwitch";
 import Logo, { LogoIcon } from "@/components/Logo";
@@ -89,6 +90,21 @@ export default async function Home() {
               <Note>{t.hero.reelsNote}</Note>
             </div>
           </div>
+        </section>
+
+        {/* Ролик «как это работает» */}
+        <section className="mx-auto max-w-4xl px-5 pb-24">
+          <figure className="relative mx-auto max-w-3xl rotate-[-0.8deg]">
+            <div className="photo relative">
+              <span className="tape -top-3 left-10 -rotate-6" aria-hidden="true" />
+              <span className="tape -top-3 right-10 rotate-3" aria-hidden="true" />
+              <IntroVideo label={t.intro.label} />
+            </div>
+            <figcaption className="mt-4 flex flex-wrap items-baseline justify-center gap-x-3 text-center">
+              <Note className="text-[24px]">{t.intro.note}</Note>
+              <span className="text-sm text-faint">{t.intro.aside}</span>
+            </figcaption>
+          </figure>
         </section>
 
         {/* Было → стало */}

@@ -32,6 +32,12 @@ const ru = {
     reelsNote: "не макеты: это собрал движок Clipzy",
   },
 
+  intro: {
+    label: "Ролик: длинное видео режется на три вертикальных рилса с субтитрами",
+    note: "10 секунд — и понятно, что делает Clipzy",
+    aside: "без звука, чтобы не пугать",
+  },
+
   example: {
     title: "Вот как это выглядит",
     lead: "Обычная запись подкаста: широкий кадр, два человека за столом. Руками никто ничего не монтировал.",
@@ -159,6 +165,12 @@ const en: typeof ru = {
     reel1Label: "Example reel: “Beat” style with a hook",
     reel3Label: "Example reel: “Stickers” style",
     reelsNote: "not mockups: the Clipzy engine made these",
+  },
+
+  intro: {
+    label: "Video: a long recording gets cut into three vertical reels with captions",
+    note: "10 seconds, and you get what Clipzy does",
+    aside: "muted, so it won't startle you",
   },
 
   example: {
