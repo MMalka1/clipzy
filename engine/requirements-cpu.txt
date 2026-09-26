@@ -1,0 +1,9 @@
+# Зависимости движка для сервера без видеокарты (Vercel Sandbox, Linux). Без пакетов CUDA — они весят гигабайты.
+faster-whisper
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+opencv-python-headless<5
+numpy
+yt-dlp

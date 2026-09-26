@@ -4,7 +4,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { nextCookies } from "better-auth/next-js";
 import { anonymous } from "better-auth/plugins";
 import { avatarAllowed, parseUserImage } from "@/components/Avatar";
-import { authDatabase } from "./db";
+import { authDatabase, queueGuestMove } from "./db";
 import { sendMail } from "./mail";
 import { engineInternal } from "./engine-token";
 import { telegramAuth } from "./telegram-auth";
@@ -76,9 +76,12 @@ const options = {
       generateName: () => "Гость",
       // Гость зарегистрировался — его проекты переходят в новый аккаунт
       onLinkAccount: async ({ anonymousUser, newUser }) => {
-        await engineInternal("/internal/reassign", { from: anonymousUser.user.id, to: newUser.user.id }).catch((e) =>
-          console.error("[auth] не удалось перенести проекты гостя:", e),
-        );
+        const move = { from: anonymousUser.user.id, to: newUser.user.id };
+        await engineInternal("/internal/reassign", move).catch(async (e) => {
+          // Движок спит или недоступен — перенесём, когда проснётся
+          console.error("[auth] проекты гостя перенесём позже:", e instanceof Error ? e.message : e);
+          await queueGuestMove(move.from, move.to).catch((err) => console.error("[auth] не удалось запомнить перенос:", err));
+        });
       },
     }),
     telegramAuth(),

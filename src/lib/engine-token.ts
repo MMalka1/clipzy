@@ -27,7 +27,12 @@ export function signEngineToken(user: { id: string; isAnonymous?: boolean | null
 
 /** Служебный вызов движка с сервера сайта (например, перенос проектов гостя). */
 export async function engineInternal(pathname: string, body: unknown) {
-  const res = await fetch(`${ENGINE_URL}${pathname}`, {
+  // Движок в Vercel Sandbox: зовём, только если машина уже работает
+  const base = process.env.NEXT_PUBLIC_ENGINE_MODE === "sandbox" && !process.env.NEXT_PUBLIC_ENGINE_URL
+    ? await (await import("./sandbox-engine")).runningEngineUrl()
+    : ENGINE_URL;
+  if (!base) throw new Error("движок спит");
+  const res = await fetch(`${base}${pathname}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Engine-Secret": secret() },
     body: JSON.stringify(body),

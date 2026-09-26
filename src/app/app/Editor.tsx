@@ -38,6 +38,11 @@ import {
   type SfxEvent,
   type Aspect,
   type RenderState,
+  type WakeState,
+  SANDBOX,
+  peekEngine,
+  subscribeWake,
+  wakeEngine,
   assetUrl,
   clipSfx,
   engineHealth,
@@ -131,6 +136,7 @@ export default function Editor() {
   const t = editor[useLocale()];
   const [stage, setStage] = useState<Stage>("upload");
   const [engineOk, setEngineOk] = useState<boolean | null>(null);
+  const [wake, setWake] = useState<WakeState | null>(null); // движок в Vercel Sandbox: ставится или просыпается
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -177,9 +183,9 @@ export default function Editor() {
 
   // Проверяем, запущен ли движок
   const loadEngine = useCallback(() => {
-    engineHealth().then(async (h) => {
+    engineHealth(setWake).then(async (h) => {
       setEngineOk(Boolean(h?.ok));
-      if (!h?.ok) return;
+      if (!h?.ok || h.asleep) return; // машина спит — проекты покажем, когда проснётся
       try {
         const sess = await engineSession();
         setUser(sess.user);
@@ -193,6 +199,23 @@ export default function Editor() {
     setEngineOk(null);
     loadEngine();
   }, [loadEngine]);
+  const retrySetup = useCallback(() => {
+    setEngineOk(null);
+    wakeEngine({ retry: true, onState: setWake }).then((ok) => (ok ? loadEngine() : setEngineOk(false)));
+  }, [loadEngine]);
+  // Машина спит: недавние проекты — по кнопке (она будит движок)
+  const wakeForRecent = useCallback(() => {
+    wakeEngine().then(async (ok) => {
+      if (!ok) return;
+      try {
+        setUser((await engineSession()).user);
+        setRecent(await listJobs());
+      } catch {
+        // список проектов не критичен
+      }
+    });
+  }, []);
+  useEffect(() => (SANDBOX ? subscribeWake(setWake) : undefined), []);
   useEffect(loadEngine, [loadEngine]);
 
   useEffect(() => {
@@ -200,6 +223,55 @@ export default function Editor() {
       if (videoUrl?.startsWith("blob:")) URL.revokeObjectURL(videoUrl);
     };
   }, [videoUrl]);
+
+  // Vercel Sandbox: пока человек активен или идёт обработка — продлеваем сеанс машины. Отошёл — пусть уснёт
+  // (так бережём бесплатный лимит). Вернулся к проекту, а машина спит — будим и заново открываем видео.
+  const live = useRef({ stage, busy: false, jobId: "", engineVideo: false });
+  useEffect(() => {
+    live.current = {
+      stage,
+      busy: stage === "uploading" || stage === "processing" || render?.status === "queued" || render?.status === "rendering",
+      jobId: job?.id ?? "",
+      engineVideo: Boolean(videoUrl && !videoUrl.startsWith("blob:")),
+    };
+  }, [stage, render?.status, job?.id, videoUrl]);
+  useEffect(() => {
+    if (!SANDBOX) return;
+    let last = Date.now();
+    let checking = false;
+    const tick = async () => {
+      const now = live.current;
+      if (checking || document.visibilityState !== "visible") return;
+      if (!now.busy && Date.now() - last > 5 * 60_000) return;
+      if (now.stage === "upload") return; // на экране загрузки машину разбудит само действие
+      checking = true;
+      try {
+        const st = await peekEngine();
+        if (st.state === "asleep" && (await wakeEngine())) {
+          const cur = live.current;
+          if (cur.engineVideo && cur.jobId) setVideoUrl(`${sourceUrl(cur.jobId)}&w=${Date.now()}`);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    const bump = () => {
+      const idle = Date.now() - last > 5 * 60_000;
+      last = Date.now();
+      if (idle) tick();
+    };
+    const onVisible = () => document.visibilityState === "visible" && bump();
+    const timer = setInterval(tick, 150_000);
+    window.addEventListener("pointerdown", bump);
+    window.addEventListener("keydown", bump);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pointerdown", bump);
+      window.removeEventListener("keydown", bump);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   async function acceptFile(file: File | undefined) {
     if (!file) return;
@@ -294,9 +366,11 @@ export default function Editor() {
   /** fromEngine — видео скачал движок: исходник для превью берём у него */
   function pollJob(id: string, fromEngine = false) {
     const started = Date.now();
+    let fails = 0;
     const tick = async () => {
       try {
         const j = await getJob(id);
+        fails = 0;
         setJob(j);
         if (j.name) setFileName(j.name); // у видео по ссылке название приходит после скачивания
         setSlowHint(j.stage === "transcribe" && j.progress < 0.1 && Date.now() - started > 12000);
@@ -310,10 +384,15 @@ export default function Editor() {
           openReady(j);
           return;
         }
-      } catch {
-        // движок мог ненадолго не ответить — пробуем ещё
+      } catch (e) {
+        // Проект пропал (машина потеряла его) или движок долго не отвечает — говорим честно, а не крутим вечно
+        if ((e instanceof EngineError && e.status === 404) || ++fails > 90) {
+          setError(e instanceof EngineError && e.status === 404 ? e.message : t.errEngineLost);
+          setStage("upload");
+          return;
+        }
       }
-      setTimeout(tick, 1000);
+      setTimeout(tick, fails ? 2000 : 1000);
     };
     tick();
   }
@@ -701,10 +780,20 @@ export default function Editor() {
         music: s.music,
         musicVolume: s.musicVolume,
       });
+      let fails = 0;
       const poll = async () => {
-        const r = await getRender(id).catch(() => null);
-        if (r) setRender(r);
-        if (!r || r.status === "queued" || r.status === "rendering") setTimeout(poll, 700);
+        try {
+          const r = await getRender(id);
+          fails = 0;
+          setRender(r);
+          if (r.status === "queued" || r.status === "rendering") setTimeout(poll, 700);
+        } catch (e) {
+          if ((e instanceof EngineError && e.status === 404) || ++fails > 60) {
+            setRender({ id, status: "error", progress: 0, error: t.errRenderLost });
+            return;
+          }
+          setTimeout(poll, 2000);
+        }
       };
       poll();
     } catch (e) {
@@ -753,11 +842,37 @@ export default function Editor() {
           <div className="w-full max-w-xl">
             <div className="flex items-center justify-between gap-4">
               <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.035em] sm:text-[40px]">{t.newProject}</h1>
-              <EngineBadge ok={engineOk} />
+              <EngineBadge ok={engineOk} wake={wake} />
             </div>
             <p className="mt-2 text-dim">{t.newProjectHint}</p>
 
-            {engineOk === false ? (
+            {(wake?.state === "installing" || wake?.state === "starting") && <WakePanel wake={wake} />}
+            {engineOk === false && SANDBOX && (wake?.state === "quota" || wake?.state === "failed") ? (
+              <div className="mt-8 rounded-xl border border-line-strong bg-panel p-6">
+                <div className="flex items-start gap-3">
+                  <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-signal" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <p className="font-medium">{wake.state === "quota" ? t.quotaTitle : t.setupFailedTitle}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-dim">
+                      {wake.state === "quota" ? t.quotaText : t.setupFailedText}
+                    </p>
+                    {wake.state === "failed" && wake.detail && (
+                      <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-md bg-raised p-2 font-mono text-[11px] text-faint">
+                        {wake.detail}
+                      </pre>
+                    )}
+                    {wake.state === "failed" && (
+                      <button
+                        onClick={retrySetup}
+                        className="mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-md border border-line-strong px-3 text-sm transition-colors hover:bg-raised"
+                      >
+                        <RotateCw className="h-4 w-4" aria-hidden="true" /> {t.retrySetup}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : engineOk === false ? (
               <div className="mt-8 rounded-xl border border-line-strong bg-panel p-6">
                 <div className="flex items-start gap-3">
                   <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-signal" aria-hidden="true" />
@@ -805,7 +920,7 @@ export default function Editor() {
                   <Upload className="h-5 w-5 text-fg" aria-hidden="true" />
                 </span>
                 <span className="mt-4 font-medium">{t.dropVideo}</span>
-                <span className="mt-1 font-mono text-xs text-faint">{t.dropFormats}</span>
+                <span className="mt-1 font-mono text-xs text-faint">{SANDBOX ? t.dropFormatsFree : t.dropFormats}</span>
               </button>
             )}
             {engineOk && (
@@ -861,6 +976,14 @@ export default function Editor() {
               {error}
             </p>
 
+            {SANDBOX && engineOk && wake?.state === "asleep" && recent.length === 0 && (
+              <button
+                onClick={wakeForRecent}
+                className="mt-8 flex h-9 cursor-pointer items-center gap-2 rounded-md border border-line-strong px-3 text-sm text-dim transition-colors hover:bg-raised hover:text-fg"
+              >
+                <Clock className="h-4 w-4" aria-hidden="true" /> {t.showRecent}
+              </button>
+            )}
             {engineOk && recent.length > 0 && (
               <div className="mt-8">
                 <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-faint">{t.recentProjects}</h2>
@@ -916,6 +1039,7 @@ export default function Editor() {
           <div className="w-full max-w-sm">
             <p className="font-mono text-xs text-faint">{t.processing(Math.round(overall * 100))}</p>
             <h2 className="mt-2 truncate text-xl font-medium">{fileName}</h2>
+            {first && firstP === 0 && (wake?.state === "installing" || wake?.state === "starting") && <WakePanel wake={wake} />}
             <ol className="mt-8 space-y-4">
               {stages.map((key, i) => {
                 const done = i < current;
@@ -953,7 +1077,7 @@ export default function Editor() {
             {slowHint && (
               <p className="mt-5 flex gap-2 text-sm leading-relaxed text-dim">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
-                {t.slowHint}
+                {SANDBOX ? t.slowHintCpu : t.slowHint}
               </p>
             )}
           </div>
@@ -1401,15 +1525,56 @@ function ExportDialog({
   );
 }
 
-function EngineBadge({ ok }: { ok: boolean | null }) {
+/** Движок в Vercel Sandbox ставится (первый раз) или просыпается — что происходит и сколько ждать. */
+function WakePanel({ wake }: { wake: Extract<WakeState, { state: "installing" | "starting" }> }) {
   const t = editor[useLocale()];
+  const installing = wake.state === "installing";
+  const steps = Object.keys(t.wakeSteps);
+  const current = installing ? Math.max(steps.indexOf(wake.step), 0) : -1;
+  return (
+    <div className="mt-8 rounded-xl border border-line-strong bg-panel p-6" role="status" aria-live="polite">
+      <div className="flex items-start gap-3">
+        <LoaderCircle className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-signal" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="font-medium">{installing ? t.wakeInstallTitle : t.wakeStartTitle}</p>
+          <p className="mt-1 text-sm leading-relaxed text-dim">{installing ? t.wakeInstallText : t.wakeStartText}</p>
+          {installing && (
+            <ol className="mt-4 space-y-1.5 text-sm">
+              {steps.map((key, i) => (
+                <li key={key} className={`flex items-center gap-2 ${i < current ? "text-dim" : i === current ? "text-fg" : "text-faint"}`}>
+                  {i < current ? (
+                    <Check className="h-4 w-4 text-[#34d399]" aria-hidden="true" />
+                  ) : i === current ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin text-signal" aria-hidden="true" />
+                  ) : (
+                    <span className="h-4 w-4 rounded-full border border-line-strong" aria-hidden="true" />
+                  )}
+                  {t.wakeSteps[key]}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EngineBadge({ ok, wake }: { ok: boolean | null; wake?: WakeState | null }) {
+  const t = editor[useLocale()];
+  // Vercel Sandbox: машина ставится, просыпается или спит (проснётся по первому действию)
+  const waiting =
+    wake?.state === "installing" ? t.engineInstalling : wake?.state === "starting" ? t.engineStarting : null;
+  const asleep = ok && wake?.state === "asleep";
   return (
     <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[11px] text-dim">
       <span
-        className={`h-1.5 w-1.5 rounded-full ${ok === null ? "animate-pulse bg-faint" : ok ? "bg-[#34d399]" : "bg-rec"}`}
+        className={`h-1.5 w-1.5 rounded-full ${
+          ok === null || waiting ? "animate-pulse bg-faint" : asleep ? "bg-faint" : ok ? "bg-[#34d399]" : "bg-rec"
+        }`}
         aria-hidden="true"
       />
-      {ok === null ? t.engineChecking : ok ? t.engineOnline : t.engineOffline}
+      {waiting ?? (asleep ? t.engineAsleep : ok === null ? t.engineChecking : ok ? t.engineOnline : t.engineOffline)}
     </span>
   );
 }

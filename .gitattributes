@@ -1,0 +1,3 @@
+# Скрипты движка запускаются на Linux (Vercel Sandbox)
+*.sh text eol=lf
+engine/**/*.py text eol=lf

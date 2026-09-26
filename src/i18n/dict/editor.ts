@@ -19,6 +19,7 @@ const ru = {
   checkAgain: "Проверить снова",
   dropVideo: "Перетащите видео или выберите файл",
   dropFormats: "MP4 · MOV · WEBM · до 4 ГБ",
+  dropFormatsFree: "MP4 · MOV · WEBM · до 2 ГБ и 20 минут",
   orPasteLink: "или вставьте ссылку",
   linkLabel: "Ссылка на видео",
   linkPlaceholder: "youtube.com/watch?v=… · vkvideo.ru · rutube.ru",
@@ -117,6 +118,30 @@ const ru = {
   engineChecking: "проверка",
   engineOnline: "движок онлайн",
   engineOffline: "движок офлайн",
+  engineInstalling: "установка",
+  engineStarting: "запуск",
+  engineAsleep: "движок спит",
+
+  // Движок на бесплатном сервере (Vercel Sandbox): просыпается по запросу
+  wakeInstallTitle: "Первый запуск: ставим движок на сервер",
+  wakeInstallText: "Это 5–10 минут и только один раз. Страницу можно не обновлять — всё продолжится само.",
+  wakeSteps: {
+    system: "Системные программы (FFmpeg)",
+    python: "Python",
+    packages: "Библиотеки обработки видео",
+    model: "Модель распознавания речи (~1,6 ГБ)",
+  } as Record<string, string>,
+  wakeStartTitle: "Будим движок",
+  wakeStartText: "Сервер спит, пока им никто не пользуется. Обычно просыпается меньше чем за минуту.",
+  quotaTitle: "Бесплатный лимит обработки на этот месяц закончился",
+  quotaText: "Лимит обновится в начале следующего периода. Готовые проекты никуда не денутся.",
+  setupFailedTitle: "Не удалось установить движок",
+  setupFailedText: "Попробуйте ещё раз. Если не поможет — напишите нам.",
+  retrySetup: "Повторить установку",
+  slowHintCpu: "Бесплатный сервер считает на процессоре: расшифровка займёт несколько минут.",
+  showRecent: "Мои проекты",
+  errEngineLost: "Сервер обработки не отвечает. Попробуйте ещё раз через минуту.",
+  errRenderLost: "Сервер перезапустился, и экспорт прервался. Запустите его ещё раз.",
 };
 
 const en: typeof ru = {
@@ -134,6 +159,7 @@ const en: typeof ru = {
   checkAgain: "Check again",
   dropVideo: "Drop a video here or choose a file",
   dropFormats: "MP4 · MOV · WEBM · up to 4 GB",
+  dropFormatsFree: "MP4 · MOV · WEBM · up to 2 GB and 20 minutes",
   orPasteLink: "or paste a link",
   linkLabel: "Video link",
   linkPlaceholder: "youtube.com/watch?v=… · vkvideo.ru · rutube.ru",
@@ -228,6 +254,29 @@ const en: typeof ru = {
   engineChecking: "checking",
   engineOnline: "engine online",
   engineOffline: "engine offline",
+  engineInstalling: "installing",
+  engineStarting: "starting",
+  engineAsleep: "engine asleep",
+
+  wakeInstallTitle: "First run: installing the engine on the server",
+  wakeInstallText: "This takes 5–10 minutes and only happens once. No need to refresh — it will continue on its own.",
+  wakeSteps: {
+    system: "System tools (FFmpeg)",
+    python: "Python",
+    packages: "Video processing libraries",
+    model: "Speech recognition model (~1.6 GB)",
+  },
+  wakeStartTitle: "Waking up the engine",
+  wakeStartText: "The server sleeps while nobody uses it. It usually wakes up in under a minute.",
+  quotaTitle: "This month's free processing limit is used up",
+  quotaText: "The limit resets at the start of the next period. Your finished projects are safe.",
+  setupFailedTitle: "Couldn't install the engine",
+  setupFailedText: "Try again. If that doesn't help, let us know.",
+  retrySetup: "Retry installation",
+  slowHintCpu: "The free server runs on CPU: transcription will take a few minutes.",
+  showRecent: "My projects",
+  errEngineLost: "The processing server isn't responding. Try again in a minute.",
+  errRenderLost: "The server restarted and the export was interrupted. Start it again.",
 };
 
 const editor: Dict<typeof ru> = { ru, en };

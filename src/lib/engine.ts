@@ -2,7 +2,11 @@
 
 import type { Segment } from "./captions";
 
-export const ENGINE_URL = (process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+/** Свой компьютер или сервер — постоянный адрес из NEXT_PUBLIC_ENGINE_URL.
+ *  Режим sandbox — движок в Vercel Sandbox: адрес выдаёт /api/engine, когда будит машину. */
+const FIXED_URL = process.env.NEXT_PUBLIC_ENGINE_URL?.replace(/\/+$/, "");
+export const SANDBOX = process.env.NEXT_PUBLIC_ENGINE_MODE === "sandbox" && !FIXED_URL;
+let ENGINE_URL = FIXED_URL ?? "http://localhost:8000";
 
 export type Highlight = {
   id: number;
@@ -178,12 +182,14 @@ const ERR = {
     engine: (status: number) => `Ошибка движка (${status})`,
     upload: "Не удалось загрузить файл",
     offline: "Движок недоступен",
+    tooLong: (m: number) => `Видео длиннее ${m} минут. В бесплатном режиме загрузите кусок покороче.`,
     fromUrl: "Не удалось добавить видео по ссылке",
   },
   en: {
     engine: (status: number) => `Engine error (${status})`,
     upload: "Couldn't upload the file",
     offline: "The engine is unavailable",
+    tooLong: (m: number) => `The video is longer than ${m} minutes. In free mode, upload a shorter part.`,
     fromUrl: "Couldn't add the video from this link",
   },
 };
@@ -192,7 +198,7 @@ const err = () => ERR[uiLang()];
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail || err().engine(res.status));
+    throw new EngineError(body?.detail || err().engine(res.status), res.status);
   }
   return res.json();
 }
@@ -219,11 +225,21 @@ const withToken = (url: string) => (session ? `${url}${url.includes("?") ? "&" :
 
 async function efetch(path: string, init: RequestInit = {}, retry = true, fresh = false): Promise<Response> {
   const { token } = await engineSession(fresh);
-  const res = await fetch(`${ENGINE_URL}${path}`, {
-    cache: "no-store",
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}`, "X-Lang": uiLang() },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${ENGINE_URL}${path}`, {
+      cache: "no-store",
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${token}`, "X-Lang": uiLang() },
+    });
+  } catch (e) {
+    // Машина Vercel Sandbox уснула — будим и повторяем один раз
+    if (SANDBOX && retry && (await wakeEngine())) return efetch(path, init, false, fresh);
+    throw e;
+  }
+  if (SANDBOX && retry && res.status >= 502 && res.status <= 504 && (await wakeEngine())) {
+    return efetch(path, init, false, fresh);
+  }
   if (res.status === 401 && retry) {
     await engineSession(true);
     return efetch(path, init, false);
@@ -231,7 +247,152 @@ async function efetch(path: string, init: RequestInit = {}, retry = true, fresh 
   return res;
 }
 
-export async function engineHealth(): Promise<{ ok: boolean; ffmpeg: boolean; nvenc: boolean } | null> {
+/* ——— Движок в Vercel Sandbox: машина спит, пока не нужна ——— */
+export type WakeState =
+  | { state: "online"; url: string; busy: number; maxMinutes: number | null }
+  | { state: "asleep" }
+  | { state: "installing"; step: string }
+  | { state: "starting" }
+  | { state: "failed"; detail: string }
+  | { state: "quota" }
+  | { state: "unavailable"; detail: string };
+
+/** Ограничения бесплатного сервера: видео длиннее — не берём (узнаём, когда движок проснётся). */
+export const engineLimits: { maxMinutes: number | null } = { maxMinutes: null };
+
+let waking: Promise<boolean> | null = null;
+let failedAt = 0; // последняя неудача: пару десятков секунд не дёргаем сервер снова
+let lastFail: WakeState | null = null;
+const wakeListeners = new Set<(s: WakeState) => void>();
+
+async function askEngine(body: { peek?: boolean; retry?: boolean }): Promise<{ status: number; state: WakeState }> {
+  try {
+    const res = await fetch("/api/engine", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const state: WakeState = await res.json();
+      if (state.state === "online") {
+        ENGINE_URL = state.url.replace(/\/+$/, "");
+        engineLimits.maxMinutes = state.maxMinutes;
+      }
+      return { status: res.status, state };
+    }
+    return { status: res.status, state: { state: "unavailable", detail: `HTTP ${res.status}` } };
+  } catch {
+    return { status: 0, state: { state: "starting" } }; // сеть моргнула — спросим ещё раз
+  }
+}
+
+/**
+ * Будит движок и ждёт, пока он ответит (первая установка — до 10 минут, дальше — секунды).
+ * Никогда не бросает исключений: false — движок недоступен, причину получат подписчики onState.
+ * retry — повторить установку после ошибки.
+ */
+export function wakeEngine(opts: { retry?: boolean; onState?: (s: WakeState) => void } = {}): Promise<boolean> {
+  if (!SANDBOX) return Promise.resolve(true);
+  // Только что не получилось — не долбим сервер (опрос проекта зовёт нас раз в секунду)
+  if (!opts.retry && lastFail && Date.now() - failedAt < 20_000) {
+    opts.onState?.(lastFail);
+    return Promise.resolve(false);
+  }
+  if (opts.onState) wakeListeners.add(opts.onState);
+  const done = (ok: boolean) => {
+    if (opts.onState) wakeListeners.delete(opts.onState);
+    return ok;
+  };
+  // Кто-то уже будит — ждём вместе; просьба переустановить идёт своим запросом
+  if (waking && !opts.retry) return waking.then(done);
+  const notify = (s: WakeState) => wakeListeners.forEach((fn) => fn(s));
+  const fail = (s: WakeState) => {
+    lastFail = s;
+    failedAt = Date.now();
+    notify(s);
+    return false;
+  };
+  const run = async () => {
+    try {
+      await engineSession(); // /api/engine пускает только вошедших (гость тоже подходит)
+    } catch (e) {
+      return fail({ state: "unavailable", detail: e instanceof Error ? e.message : String(e) });
+    }
+    const installDeadline = Date.now() + 20 * 60_000;
+    let startingSince = 0;
+    let reauthed = false;
+    let serverErrors = 0;
+    let first = true;
+    while (Date.now() < installDeadline) {
+      const { status, state: s } = await askEngine({ retry: first && opts.retry });
+      first = false;
+      if (status === 401 && !reauthed) {
+        reauthed = true; // вышли в другой вкладке или сессия истекла — входим гостем заново
+        await engineSession(true).catch(() => null);
+        continue;
+      }
+      if (status >= 500 && ++serverErrors <= 5) {
+        notify({ state: "starting" }); // функция сайта не дождалась машины — спросим ещё раз
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      if (s.state === "online") {
+        lastFail = null;
+        notify(s);
+        return true;
+      }
+      if (s.state === "failed" || s.state === "quota" || s.state === "unavailable") return fail(s);
+      notify(s);
+      if (s.state === "starting") {
+        startingSince ||= Date.now();
+        // После установки старт — секунды; четыре минуты «запуска» значат, что что-то не так
+        if (Date.now() - startingSince > 4 * 60_000) return fail({ state: "unavailable", detail: "timeout" });
+      } else startingSince = 0;
+      await new Promise((r) => setTimeout(r, s.state === "installing" ? 5000 : 2000));
+    }
+    return fail({ state: "unavailable", detail: "timeout" });
+  };
+  const p = run().finally(() => {
+    if (waking === p) waking = null;
+  });
+  waking = p;
+  return p.then(done);
+}
+
+/** Постоянная подписка на ход пробуждения (экран ожидания в редакторе). Возвращает отписку. */
+export function subscribeWake(fn: (s: WakeState) => void) {
+  wakeListeners.add(fn);
+  return () => {
+    wakeListeners.delete(fn);
+  };
+}
+
+/** Работает ли движок прямо сейчас — не будя машину. Заодно продлевает её сеанс, пока человек активен. */
+export async function peekEngine(): Promise<WakeState> {
+  if (!SANDBOX) return { state: "online", url: ENGINE_URL, busy: 0, maxMinutes: null };
+  try {
+    await engineSession();
+  } catch (e) {
+    return { state: "unavailable", detail: e instanceof Error ? e.message : String(e) };
+  }
+  return (await askEngine({ peek: true })).state;
+}
+
+/**
+ * Есть ли связь с движком. В режиме Vercel Sandbox машину не будим: asleep — спит и проснётся,
+ * когда пользователь загрузит видео или откроет проект.
+ */
+export async function engineHealth(
+  onState?: (s: WakeState) => void,
+): Promise<{ ok: boolean; asleep?: boolean; ffmpeg?: boolean; nvenc?: boolean } | null> {
+  if (SANDBOX) {
+    const s = await peekEngine();
+    onState?.(s);
+    if (s.state === "online") return { ok: true };
+    if (s.state === "asleep" || s.state === "starting" || s.state === "installing") return { ok: true, asleep: true };
+    return null;
+  }
   try {
     const res = await fetch(`${ENGINE_URL}/health`, { cache: "no-store" });
     return res.ok ? res.json() : null;
@@ -240,8 +401,31 @@ export async function engineHealth(): Promise<{ ok: boolean; ffmpeg: boolean; nv
   }
 }
 
+/** Длина видеофайла в секундах (по метаданным в браузере) — чтобы не загружать заведомо слишком длинное. */
+export function fileDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const finish = (d: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(d);
+    };
+    v.preload = "metadata";
+    v.onloadedmetadata = () => finish(Number.isFinite(v.duration) ? v.duration : null);
+    v.onerror = () => finish(null);
+    setTimeout(() => finish(null), 8000);
+    v.src = url;
+  });
+}
+
 /** Загрузка через XHR — ради прогресса. Токен свежий: лимиты зависят от плана, а план могли сменить. */
 export async function uploadVideo(file: File, onProgress: (p: number) => void): Promise<{ id: string }> {
+  if (!(await wakeEngine())) throw new Error(err().offline);
+  const max = engineLimits.maxMinutes;
+  if (max) {
+    const d = await fileDuration(file);
+    if (d && d > max * 60 + 5) throw new EngineError(err().tooLong(max), 400);
+  }
   const { token } = await engineSession(true);
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -267,6 +451,7 @@ export async function uploadVideo(file: File, onProgress: (p: number) => void): 
 
 /** Видео по ссылке (YouTube, VK Видео, Rutube): движок скачает его сам. rights — пользователь подтвердил права. */
 export async function createJobFromUrl(url: string, rights: boolean): Promise<{ id: string }> {
+  if (!(await wakeEngine())) throw new Error(err().offline);
   // Свежий токен: лимиты зависят от плана
   const res = await efetch(
     "/jobs/from-url",
@@ -325,6 +510,7 @@ export const sourceUrl = (id: string) => withToken(`${ENGINE_URL}/jobs/${id}/sou
 export const getJob = (id: string) => efetch(`/jobs/${id}`).then(json<Job>);
 
 export async function startRender(jobId: string, opts: RenderOptions) {
+  if (!(await wakeEngine())) throw new Error(err().offline);
   // Свежий токен: водяной знак зависит от плана
   const res = await efetch(
     `/jobs/${jobId}/render`,

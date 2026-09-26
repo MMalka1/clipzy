@@ -65,3 +65,36 @@ function importOldWaitlist(db: DatabaseSync) {
     // битый файл не мешает записи новых адресов
   }
 }
+
+/*
+ * Перенос проектов гостя в аккаунт, когда движок спал (Vercel Sandbox): запоминаем пару «гость → аккаунт»
+ * и переносим, как только движок проснётся.
+ */
+export async function queueGuestMove(from: string, to: string) {
+  if (pg) {
+    await pg.query("create table if not exists guest_moves (from_id text primary key, to_id text not null, created_at timestamptz not null default now())");
+    await pg.query("insert into guest_moves (from_id, to_id) values ($1, $2) on conflict (from_id) do update set to_id = excluded.to_id", [from, to]);
+    return;
+  }
+  const db = localDb();
+  db.exec("create table if not exists guest_moves (from_id text primary key, to_id text not null, created_at text not null)");
+  db.prepare("insert or replace into guest_moves (from_id, to_id, created_at) values (?, ?, ?)").run(from, to, new Date().toISOString());
+}
+
+export async function pendingGuestMoves(): Promise<{ from: string; to: string }[]> {
+  if (pg) {
+    const r = await pg.query("select from_id, to_id from guest_moves limit 50").catch(() => ({ rows: [] }));
+    return r.rows.map((x: { from_id: string; to_id: string }) => ({ from: x.from_id, to: x.to_id }));
+  }
+  const db = localDb();
+  db.exec("create table if not exists guest_moves (from_id text primary key, to_id text not null, created_at text not null)");
+  return (db.prepare("select from_id, to_id from guest_moves limit 50").all() as { from_id: string; to_id: string }[]).map((x) => ({
+    from: x.from_id,
+    to: x.to_id,
+  }));
+}
+
+export async function dropGuestMove(from: string) {
+  if (pg) await pg.query("delete from guest_moves where from_id = $1", [from]);
+  else localDb().prepare("delete from guest_moves where from_id = ?").run(from);
+}
