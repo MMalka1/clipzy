@@ -3,6 +3,7 @@ import { AudioLines, Languages, Palette, Ratio, ScanFace, Scissors, TextCursorIn
 import type landing from "@/i18n/dict/landing";
 import { captionVars, wordState } from "@/lib/captions";
 import { cssVars } from "@/lib/cssVars";
+import LoopClip from "./LoopClip";
 import Waveform, { fakePeaks } from "./Waveform";
 
 type T = (typeof landing)["ru"]["features"];
@@ -24,8 +25,7 @@ export default function FeatureDemos({ t, phrase }: { t: T; phrase: string[] }) 
       text: d.karaoke.text,
       demo: (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/demo/loop.jpg" alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover object-[50%_22%] brightness-[.75]" />
+          <LoopClip className="absolute inset-0 h-full w-full object-cover object-[50%_22%] brightness-[.75]" />
           <div className="cap cap-beat absolute inset-x-3 bottom-[16%] text-[clamp(18px,7cqw,28px)]">
             {phrase.map((w, i) => (
               <span key={i} className="cap-w kw" style={cssVars({ "--i": i })}>
@@ -69,8 +69,7 @@ export default function FeatureDemos({ t, phrase }: { t: T; phrase: string[] }) 
       text: d.hook.text,
       demo: (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/demo/loop.jpg" alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover object-[50%_22%] brightness-[.55]" />
+          <LoopClip className="absolute inset-0 h-full w-full object-cover object-[50%_22%] brightness-[.55]" />
           <div className="absolute inset-x-0 top-[20%] flex justify-center">
             <span className="hk-plate rounded-md bg-white px-3 py-1.5 text-[clamp(13px,4.4cqw,17px)] font-bold leading-tight text-[#111]">
               {d.hook.plate}
