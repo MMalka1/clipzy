@@ -150,13 +150,14 @@ function parseStatus(out: string) {
   };
 }
 
+// Движок стоит за прокси Vercel: адрес посетителя (для лимита гостей) берём из X-Forwarded-For.
 // Сервер держит блокировку всё время работы: второй одновременный запуск тихо выходит.
 // PID и число запусков — в /tmp: после сна машины это новый сеанс, и счёт начинается заново.
 const START = `exec 9>/tmp/clipzy-engine.lock; flock -n 9 || exit 0
 echo $(( $(cat /tmp/clipzy-starts 2>/dev/null || echo 0) + 1 )) >/tmp/clipzy-starts
 echo $$ >/tmp/clipzy-engine.pid
 cd ${ROOT}/engine && exec ${ROOT}/venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port ${PORT} --no-access-log \
-  --timeout-graceful-shutdown 5 >>${ROOT}/engine.log 2>&1`;
+  --timeout-graceful-shutdown 5 --proxy-headers --forwarded-allow-ips "*" >>${ROOT}/engine.log 2>&1`;
 // Останавливаем по PID (pkill -f задел бы и эту же оболочку) и ждём, пока освободится блокировка
 const STOP = `P=$(cat /tmp/clipzy-engine.pid 2>/dev/null); [ -n "$P" ] && kill "$P" 2>/dev/null
 flock -w 10 /tmp/clipzy-engine.lock true 2>/dev/null || { [ -n "$P" ] && kill -9 "$P" 2>/dev/null; flock -w 5 /tmp/clipzy-engine.lock true; }
