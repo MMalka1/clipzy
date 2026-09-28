@@ -168,7 +168,6 @@ rm -f ${ROOT}/failed; : >${ROOT}/setup.log; exec bash ${ROOT}/engine/sandbox/set
 const sandboxParams = {
   name: NAME,
   region: REGION,
-  failoverRegions: REGION === "iad1" ? ["cle1"] : ["iad1"],
   ports: [PORT],
   resources: { vcpus: 4 },
   timeout: IDLE_MS,
@@ -181,6 +180,8 @@ function explain(e: unknown): EngineState {
   const status = (e as { response?: Response })?.response?.status ?? 0;
   console.error("[sandbox]", status, text);
   // Текст ошибки отдаём дальше: по нему видно, лимит это или что-то другое (регион, настройка тарифа)
+  // 402 бывает и про лимит, и про функции, недоступные на бесплатном тарифе, — различаем по тексту
+  if (/not available on the hobby|upgrade to a pro/i.test(text)) return { state: "unavailable", detail: text.slice(0, 300) };
   if (status === 402 || /quota|limit exceeded|paused|payment required/i.test(text)) return { state: "quota", detail: text.slice(0, 300) };
   // Машина как раз засыпает или просыпается, сеть моргнула — это пройдёт, браузер спросит ещё раз
   if (status === 410 || status === 422 || status === 429 || status >= 500 || /stopping|snapshotting|timeout|ECONNRESET|fetch failed/i.test(text)) {
