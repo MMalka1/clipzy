@@ -32,12 +32,30 @@
   --color-line-strong: #c7bca8;
   --color-fg: #17140f;
   --color-dim: #5c5549;
-  --color-faint: #857d70;
-  --color-rec: #cf3e1e;
+  --color-faint: #6f675b; /* было #857d70: 3.5 → 4.8:1 на бумаге */
+  --color-rec: #b8361a; /* было #cf3e1e: 4.2 → 5.1:1 */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
   isolation: isolate;
+  overflow-x: clip; /* clip, а не hidden: иначе сломается sticky-шапка */
   background: var(--color-ink);
   color: var(--color-fg);
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  .paper {
+    --ease-spring: linear(0, 0.1 3.5%, 0.4 9%, 0.78 16%, 1.02 23%, 1.1 28%, 1.1 33%, 1.04 41%, 0.99 50%, 0.985 58%, 1.002 72%, 1);
+  }
+}
+/* Жёлтое кольцо фокуса на бумаге почти не видно — на светлом фоне рамка тёмная */
+.paper :focus-visible {
+  outline: 3px solid var(--color-fg);
+  outline-offset: 3px;
+}
+/* на тёмной хлопушке — жёлтое */
+.paper .clap :focus-visible {
+  outline-color: var(--color-signal);
 }
 /* Зерно бумаги — едва заметное */
 .paper::before {
@@ -57,6 +75,7 @@ body:has(.paper) {
 /* Маркер от руки: неровные края, лёгкий наклон */
 .marker {
   position: relative;
+  z-index: 0; /* своя стопка: подложка ::before (z -1) не уходит под фон секции */
   white-space: nowrap;
 }
 .marker::before {
@@ -447,6 +466,1164 @@ body {
   background-clip: text;
   filter: drop-shadow(0 0.06em 0.1em rgba(0, 0, 0, 0.55));
   transform: scale(1.06);
+}
+
+/* ═══════════ Лендинг: «страница монтируется сама» ═══════════
+   Правила: всё, что движется само, — внутри (prefers-reduced-motion: no-preference).
+   Базовые стили — финальный статичный кадр (так видят без JS и с reduced-motion).
+   Одноразовые входы на transform — с fill-mode backwards, иначе ломается hover.
+   Утилиты Tailwind rotate, scale и translate — отдельные свойства, поэтому своё движение — через transform. */
+
+/* ——— Появление при прокрутке, рисование от руки ——— */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .motion [data-reveal] {
+    transition:
+      opacity 0.5s var(--ease-out),
+      transform 0.8s var(--ease-spring);
+    transition-delay: var(--d, 0ms);
+  }
+  .motion [data-reveal]:not([data-shown]) {
+    opacity: 0;
+  }
+  .motion [data-reveal="up"]:not([data-shown]) {
+    transform: translateY(24px);
+  }
+  .motion [data-reveal="settle"]:not([data-shown]) {
+    transform: translateY(48px) rotate(-4deg) scale(0.96);
+  }
+  .motion [data-reveal="slap"]:not([data-shown]) {
+    transform: translateY(-24px) rotate(-6deg) scale(1.08);
+  }
+  .motion [data-loop]:not([data-inview]),
+  .motion [data-loop]:not([data-inview]) *,
+  .motion [data-loop]:not([data-inview])::before,
+  .motion [data-loop]:not([data-inview])::after,
+  .motion [data-loop]:not([data-inview]) *::before,
+  .motion [data-loop]:not([data-inview]) *::after {
+    animation-play-state: paused; /* play-state не наследуется: псевдоэлементы — отдельно */
+  }
+
+  .hand-draw path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: hand-draw 0.55s var(--ease-out) var(--draw-delay, 0ms) forwards;
+  }
+  .hand-draw path + path {
+    animation-duration: 0.2s;
+    animation-delay: calc(var(--draw-delay, 0ms) + 0.5s);
+  }
+  .note-write {
+    clip-path: inset(-30% 100% -30% -6%);
+    animation: note-write 0.8s steps(18, end) var(--write-delay, 0ms) forwards;
+  }
+  .note-write:not(.block) {
+    display: inline-block;
+  }
+  /* под экраном — ждём появления, потом анимация стартует заново */
+  .motion [data-reveal]:not([data-shown]) :is(.hand-draw path, .note-write) {
+    animation: none;
+  }
+
+  .marker-swipe::before {
+    transform-origin: 0 50%;
+    transition: transform 0.55s var(--ease-out) 0.3s;
+  }
+  .motion [data-reveal]:not([data-shown]) .marker-swipe::before {
+    transform: rotate(-1.4deg) skewX(-6deg) scaleX(0);
+  }
+
+  .tape-slap {
+    transition:
+      opacity 0.15s linear var(--tape-d, 0ms),
+      transform 0.35s var(--ease-spring) var(--tape-d, 0ms);
+  }
+  .motion [data-reveal]:not([data-shown]) .tape-slap {
+    opacity: 0;
+    transform: scale(1.4) translateY(-8px);
+  }
+  .sticker-peel {
+    transition:
+      transform 0.6s var(--ease-spring) 0.35s,
+      opacity 0.2s linear 0.35s;
+  }
+  .motion [data-reveal]:not([data-shown]) .sticker-peel {
+    opacity: 0;
+    transform: rotate(50deg) scale(0.4);
+  }
+}
+@keyframes hand-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes note-write {
+  to {
+    clip-path: inset(-30% -6% -30% -6%);
+  }
+}
+
+/* ——— Шапка: прилипает, снизу — таймлайн прокрутки ——— */
+.site-head {
+  background: color-mix(in srgb, var(--color-ink) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  box-shadow: 0 1px 0 var(--color-line);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .site-head {
+    background: var(--color-ink);
+  }
+}
+.scrub {
+  display: none;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll()) {
+    .scrub {
+      display: block;
+      position: absolute;
+      inset-inline: 0;
+      bottom: -1px;
+      height: 2px;
+      container-type: inline-size;
+      pointer-events: none;
+    }
+    .scrub-fill {
+      position: absolute;
+      inset: 0;
+      background: var(--color-signal);
+      transform-origin: left;
+      animation: scrub-fill linear both;
+      animation-timeline: scroll(root);
+    }
+    .scrub-head {
+      position: absolute;
+      left: 0;
+      top: -4px;
+      width: 2px;
+      height: 10px;
+      border-radius: 1px;
+      background: var(--color-rec);
+      animation: scrub-head linear both;
+      animation-timeline: scroll(root);
+    }
+  }
+}
+@keyframes scrub-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes scrub-head {
+  to {
+    transform: translateX(calc(100cqw - 2px));
+  }
+}
+
+/* ——— Первый экран: заголовок играет как субтитр ——— */
+.hw {
+  display: inline-block;
+  position: relative;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .hw {
+    animation: hw-ink 1ms linear calc(200ms + var(--i) * 110ms) both;
+  }
+  .hw:not(.hw-land)::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0.1em -0.08em 0.02em;
+    border-radius: 0.14em;
+    background: var(--color-signal);
+    opacity: 0;
+    animation: hw-pass 260ms var(--ease-out) calc(200ms + var(--i) * 110ms);
+  }
+  .hw-land {
+    animation:
+      hw-ink 1ms linear calc(200ms + var(--i) * 110ms) both,
+      hw-pop 440ms var(--ease-spring) calc(260ms + var(--i) * 110ms) backwards;
+  }
+  .hw-land::before {
+    transform-origin: 0 50%;
+    animation: hw-land 520ms var(--ease-spring) calc(200ms + var(--i) * 110ms) backwards;
+  }
+  .rec-dot {
+    animation: blink 1.2s steps(2, start) 4;
+  }
+}
+@keyframes hw-ink {
+  from {
+    color: color-mix(in srgb, var(--color-fg) 30%, transparent);
+  }
+  to {
+    color: var(--color-fg);
+  }
+}
+@keyframes hw-pass {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.6);
+  }
+  30% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes hw-land {
+  from {
+    transform: rotate(-1.4deg) skewX(-6deg) scaleX(0);
+  }
+}
+@keyframes hw-pop {
+  45% {
+    transform: scale(1.07) rotate(-1.5deg);
+  }
+}
+
+/* Кнопка-призыв: стрелка → ножницы «чикают» по пунктиру */
+.cta-ic svg {
+  transition:
+    transform 0.2s var(--ease-out),
+    opacity 0.2s linear;
+}
+.cta-scissors {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+.cta:is(:hover, :focus-visible) .cta-arrow {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.cta:is(:hover, :focus-visible) .cta-scissors {
+  opacity: 1;
+  transform: none;
+}
+.cta::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: -9px;
+  border-bottom: 2px dashed var(--cta-cut, var(--color-fg));
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.35s var(--ease-out);
+  pointer-events: none;
+}
+.cta:is(:hover, :focus-visible)::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .cta:is(:hover, :focus-visible) .cta-scissors {
+    animation: snip 0.28s var(--ease-io) 0.15s 2;
+  }
+}
+@keyframes snip {
+  50% {
+    transform: scaleY(0.55) rotate(-8deg);
+  }
+}
+
+/* Рилсы «налеплены руками»: падают на бумагу, при наведении их берут в руки */
+.reel-slot {
+  transition:
+    rotate 0.45s var(--ease-spring),
+    translate 0.45s var(--ease-spring),
+    scale 0.45s var(--ease-spring),
+    filter 0.3s linear;
+}
+.reel-slot .tape {
+  transition: transform 0.35s var(--ease-spring);
+}
+@media (hover: hover) and (pointer: fine) {
+  .reel-slot:hover {
+    rotate: 0deg;
+    translate: 0 -10px;
+    scale: 1.03;
+    z-index: 3;
+  }
+  .reel-slot:hover .tape {
+    transform: translateY(-3px) rotate(-4deg);
+  }
+  .reel-slot:hover .photo {
+    box-shadow:
+      0 2px 2px rgba(60, 40, 10, 0.08),
+      0 34px 50px -18px rgba(60, 40, 10, 0.5);
+  }
+  .hero-reels:has(.reel-slot:hover) .reel-slot:not(:hover) {
+    translate: 0 8px;
+    scale: 0.97;
+    filter: saturate(0.85);
+  }
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .drop-in {
+    animation: drop-in 0.85s var(--ease-spring) var(--drop, 0ms) backwards;
+  }
+}
+@keyframes drop-in {
+  from {
+    transform: translateY(-36px) rotate(-9deg) scale(1.05);
+  }
+}
+
+/* ——— Две бегущие ленты-скотча ——— */
+.tapes {
+  position: relative;
+  overflow: hidden;
+  padding-block: 44px;
+  margin-bottom: 32px;
+}
+.tape-band {
+  width: 110%;
+  margin-left: -5%;
+  overflow: hidden;
+  box-shadow: 0 12px 22px -14px rgba(40, 25, 5, 0.5);
+}
+.tape-band--a {
+  background: var(--color-signal);
+  color: #17140f;
+  transform: rotate(-2deg);
+}
+.tape-band--b {
+  background: #17140f;
+  color: #f4efe6;
+  transform: rotate(1.6deg);
+  margin-top: -18px;
+}
+.tape-track {
+  display: flex;
+  width: max-content;
+  padding-block: 12px;
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tape-track > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  padding-right: 24px; /* отступ, а не gap: иначе -50% не совпадёт со стыком */
+}
+.tape-track svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+@media (min-width: 640px) {
+  .tape-track {
+    font-size: 17px;
+    padding-block: 14px;
+  }
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .tape-track {
+    animation: marquee 150s linear infinite;
+  }
+  .tape-band--b .tape-track {
+    animation-duration: 174s;
+    animation-direction: reverse;
+  }
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ——— «А руками было бы так»: красная ручка вычёркивает рутину ——— */
+.strike {
+  position: relative;
+}
+.strike::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 55%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-rec);
+  transform: rotate(-1.5deg);
+  transform-origin: left;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .strike::after {
+    transition: transform 0.32s var(--ease-out) calc(700ms + var(--n) * 220ms);
+  }
+  .motion [data-reveal]:not([data-shown]) .strike::after {
+    transform: rotate(-1.5deg) scaleX(0);
+  }
+}
+
+/* ——— Пример: рамка 9:16 едет за настоящим роликом ——— */
+.excut-frame {
+  position: relative;
+  overflow: hidden;
+}
+.excut-crop {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 31.64%;
+  outline: 3px solid var(--color-signal);
+  outline-offset: -3px;
+  box-shadow: 0 0 0 100vmax rgba(18, 14, 8, 0.45);
+  transform: translateX(184%); /* ≈58% кадра — правая ведущая */
+  will-change: transform;
+}
+.excut[data-host="1"] .excut-crop {
+  transform: translateX(35%); /* ≈11% — левая ведущая */
+}
+.excut-crop b {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-signal);
+  color: #17140f;
+  font:
+    500 10px/1.2 var(--font-jetbrains),
+    monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.excut-face {
+  position: absolute;
+  border: 2px dashed #fff;
+  border-radius: 8px;
+  opacity: 0;
+  transform: scale(1.3);
+  pointer-events: none;
+}
+.excut-face::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  translate: -50% -2px;
+  white-space: nowrap;
+  font:
+    700 15px/1 var(--font-caveat),
+    cursive;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.excut[data-live][data-host="0"] .excut-face[data-face="0"],
+.excut[data-live][data-host="1"] .excut-face[data-face="1"] {
+  opacity: 1;
+  transform: none;
+}
+.excut-checks svg path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.excut[data-live] .excut-checks li:not([data-on]) svg path {
+  stroke-dashoffset: 1;
+}
+.excut-hl {
+  background: linear-gradient(#f9dc0cb3, #f9dc0cb3) no-repeat 0 88% / 0% 42%;
+}
+.excut[data-live] .excut-checks li[data-on] .excut-hl {
+  background-size: 100% 42%;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .excut-crop {
+    transition: transform 0.42s var(--ease-io);
+  }
+  .excut-face {
+    transition:
+      opacity 0.2s linear,
+      transform 0.35s var(--ease-spring);
+  }
+  .excut-checks svg path {
+    transition: stroke-dashoffset 0.45s var(--ease-out);
+  }
+  .excut-hl {
+    transition: background-size 0.5s var(--ease-out) 0.15s;
+  }
+  .excut-flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    animation: excut-flash 0.45s ease-out;
+  }
+  .excut[data-cut="0"] .excut-reel .photo {
+    animation: punch-a 0.3s var(--ease-out);
+  }
+  .excut[data-cut="1"] .excut-reel .photo {
+    animation: punch-b 0.3s var(--ease-out); /* смена имени перезапускает анимацию */
+  }
+}
+@keyframes excut-flash {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes punch-a {
+  50% {
+    transform: scale(1.03);
+  }
+}
+@keyframes punch-b {
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+/* ——— Что умеет: карточки-демо ——— */
+.demo {
+  container-type: inline-size;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .kw {
+    animation: kw 2.1s linear calc(var(--i) * 700ms) infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kw:first-child {
+    color: #ffd60a;
+    transform: scale(1.08);
+  }
+}
+@keyframes kw {
+  0%,
+  33% {
+    color: #ffd60a;
+    transform: scale(1.08);
+  }
+  33.5%,
+  100% {
+    color: #fff;
+    transform: none;
+  }
+}
+
+.fl-stage {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  padding: 11% 7% 13%;
+}
+.fl-stage > p {
+  grid-area: 1 / 1; /* слои друг на друге: без перестройки и прыжков */
+}
+.fl {
+  text-decoration: none;
+  color: #ff9a82;
+  position: relative;
+}
+.fl::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 55%;
+  height: 2.5px;
+  border-radius: 2px;
+  background: #ff453a;
+  transform: rotate(-2deg);
+  transform-origin: left;
+}
+.fl-clean {
+  opacity: 0;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .fl-raw {
+    animation: fl-raw 5.5s var(--ease-out) infinite;
+  }
+  .fl-clean {
+    animation: fl-clean 5.5s var(--ease-out) infinite;
+  }
+  .fl:nth-of-type(1)::after {
+    animation: fl-s1 5.5s var(--ease-out) infinite;
+  }
+  .fl:nth-of-type(2)::after {
+    animation: fl-s2 5.5s var(--ease-out) infinite;
+  }
+  .fl:nth-of-type(3)::after {
+    animation: fl-s3 5.5s var(--ease-out) infinite;
+  }
+  .fl-snip {
+    animation: fl-snip 5.5s var(--ease-io) infinite;
+  }
+}
+@keyframes fl-s1 {
+  0%,
+  10% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+  15%,
+  88% {
+    transform: rotate(-2deg) scaleX(1);
+  }
+  91%,
+  100% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+}
+@keyframes fl-s2 {
+  0%,
+  18% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+  23%,
+  88% {
+    transform: rotate(-2deg) scaleX(1);
+  }
+  91%,
+  100% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+}
+@keyframes fl-s3 {
+  0%,
+  26% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+  31%,
+  88% {
+    transform: rotate(-2deg) scaleX(1);
+  }
+  91%,
+  100% {
+    transform: rotate(-2deg) scaleX(0);
+  }
+}
+@keyframes fl-raw {
+  0%,
+  44% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  52%,
+  93% {
+    opacity: 0;
+    transform: translateY(-8px);
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes fl-clean {
+  0%,
+  48% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  56%,
+  88% {
+    opacity: 1;
+    transform: none;
+  }
+  93%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes fl-snip {
+  0%,
+  42%,
+  58%,
+  100% {
+    transform: none;
+  }
+  47% {
+    transform: rotate(-14deg) scaleY(0.55);
+  }
+  52% {
+    transform: rotate(6deg);
+  }
+}
+
+.hk-plate {
+  transform: rotate(-3deg);
+}
+.hk-sel {
+  transform-origin: left;
+}
+.hk-head {
+  transform: translateX(calc((100cqw - 26px) * 0.6));
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .hk-head {
+    animation: hk-head 5s linear infinite;
+  }
+  .hk-sel {
+    animation: hk-sel 5s var(--ease-spring) infinite;
+  }
+  .hk-plate {
+    animation: hk-plate 5s var(--ease-spring) infinite;
+  }
+  .hk-note {
+    animation: hk-note 5s linear infinite;
+  }
+}
+@keyframes hk-head {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100cqw - 26px));
+  }
+}
+@keyframes hk-sel {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  36% {
+    opacity: 1;
+    transform: scaleX(1.04);
+  }
+  40%,
+  92% {
+    opacity: 1;
+    transform: none;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes hk-plate {
+  0%,
+  42% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
+  48% {
+    opacity: 1;
+    transform: scale(1.06) rotate(-2deg);
+  }
+  52%,
+  92% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: rotate(-3deg);
+  }
+}
+@keyframes hk-note {
+  0%,
+  52% {
+    opacity: 0;
+  }
+  58%,
+  92% {
+    opacity: 1;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.sp-box {
+  position: absolute;
+  border: 2px dashed #fff;
+  border-radius: 6px;
+}
+.sp-n {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 99px;
+  background: var(--color-signal);
+  color: #17140f;
+  font:
+    600 10px/1 var(--font-jetbrains),
+    monospace;
+}
+.sp-panel {
+  position: absolute;
+  inset-inline: 0;
+  height: 50%;
+  background: url(/demo/source.jpg) no-repeat;
+  background-size: 284.9% auto;
+}
+.sp-top {
+  top: 0;
+  background-position: 11.6% 33%; /* левая ведущая */
+}
+.sp-bot {
+  bottom: 0;
+  background-position: 86% 33%; /* правая ведущая */
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .sp-box-1 {
+    animation: sp-box1 6s var(--ease-out) infinite;
+  }
+  .sp-box-2 {
+    animation: sp-box2 6s var(--ease-out) infinite;
+  }
+  .sp-top {
+    animation: sp-top 6s var(--ease-spring) infinite;
+  }
+  .sp-bot {
+    animation: sp-bot 6s var(--ease-spring) infinite;
+  }
+  .sp-cap {
+    animation: sp-cap 6s var(--ease-spring) infinite;
+  }
+}
+@keyframes sp-box1 {
+  0%,
+  3% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+  9%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sp-box2 {
+  0%,
+  15% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+  21%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sp-top {
+  0%,
+  9% {
+    opacity: 0;
+    transform: translateX(-45%);
+  }
+  18%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sp-bot {
+  0%,
+  21% {
+    opacity: 0;
+    transform: translateX(45%);
+  }
+  30%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sp-cap {
+  0%,
+  34% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  44%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Иконка в жёлтой кляксе */
+.blob {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.blob::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--color-signal);
+  border-radius: 0.6em 0.3em 0.7em 0.35em / 0.4em 0.65em 0.35em 0.7em;
+  transform: rotate(-6deg);
+}
+
+/* ——— Стили: субтитр «выпрыгивает» заново при смене ——— */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .cap-enter {
+    animation: cap-enter 0.34s var(--ease-spring) backwards;
+  }
+  .chip-on {
+    animation: chip-pick 0.38s var(--ease-spring);
+  }
+}
+@keyframes cap-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.85);
+  }
+}
+@keyframes chip-pick {
+  0% {
+    transform: scale(0.9) rotate(-4deg);
+  }
+  60% {
+    transform: scale(1.08) rotate(2deg);
+  }
+}
+
+/* ——— Цены: чек печатается, на него падает штамп ——— */
+.receipt {
+  background: var(--color-panel);
+  padding: 22px 18px 26px;
+  rotate: -1deg;
+  isolation: isolate; /* маркер под ценой остаётся над фоном чека */
+  box-shadow: 0 22px 40px -26px rgba(60, 40, 10, 0.55);
+}
+@media (min-width: 640px) {
+  .receipt {
+    padding: 26px 26px 30px;
+  }
+}
+.receipt::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  height: 8px; /* рваный зубчатый край */
+  background:
+    linear-gradient(135deg, var(--color-panel) 25%, transparent 25%) -8px 0 / 16px 16px repeat-x,
+    linear-gradient(225deg, var(--color-panel) 25%, transparent 25%) -8px 0 / 16px 16px repeat-x;
+}
+.barcode {
+  height: 30px;
+  opacity: 0.85;
+  background: repeating-linear-gradient(
+    90deg,
+    #17140f 0 2px,
+    transparent 2px 4px,
+    #17140f 4px 5px,
+    transparent 5px 8px,
+    #17140f 8px 11px,
+    transparent 11px 13px
+  );
+}
+.stamp {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 7px 12px;
+  border: 3px solid currentColor;
+  border-radius: 10px;
+  color: var(--color-rec);
+  font-family: var(--font-unbounded), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.05;
+  rotate: -11deg;
+  mix-blend-mode: multiply;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.stamp b {
+  font-size: 20px;
+}
+.stamp small {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+@media (min-width: 640px) {
+  .stamp {
+    right: -26px;
+    bottom: 18px;
+  }
+  .stamp b {
+    font-size: 24px;
+  }
+}
+.receipt .leader {
+  transform-origin: 0 50%;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .motion .receipt[data-reveal] {
+    transition:
+      clip-path 0.9s steps(10, end),
+      transform 0.9s var(--ease-out);
+  }
+  .motion .receipt[data-reveal]:not([data-shown]) {
+    opacity: 1;
+    clip-path: inset(-40px -140px 100% -40px);
+    transform: translateY(-14px);
+  }
+  .motion .receipt[data-shown] {
+    clip-path: inset(-40px -140px -40px -40px); /* справа запас: штамп заходит за край чека */
+  }
+  .motion .receipt[data-shown=""] {
+    animation: thud 0.16s ease-out 1.66s;
+  }
+  .motion .receipt .leader {
+    transition: scale 0.4s var(--ease-out) calc(0.85s + var(--i) * 0.12s);
+  }
+  .motion .receipt:not([data-shown]) .leader {
+    scale: 0 1;
+  }
+  .receipt[data-shown=""] .stamp {
+    animation: stamp 0.42s var(--ease-out) 1.4s backwards; /* только после прокрутки, не при загрузке */
+  }
+}
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: scale(2.3);
+  }
+  60% {
+    opacity: 0.92;
+    transform: scale(0.94);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes thud {
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+/* Купон раннего доступа: отрезается по пунктиру */
+.coupon {
+  outline: 2px dashed rgba(23, 20, 15, 0.5);
+  outline-offset: -10px;
+  box-shadow: 0 24px 40px -24px rgba(60, 40, 10, 0.55);
+}
+.stamp.stamp-ok {
+  right: 20px;
+  bottom: 44px;
+  color: #b3261e;
+  font-size: 17px;
+  padding: 6px 12px;
+  rotate: -9deg;
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .stamp.stamp-ok {
+    animation: stamp 0.42s var(--ease-out) backwards;
+  }
+}
+
+/* ——— Вопросы: раскрываются ——— */
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-plus {
+  transition: transform 0.35s var(--ease-spring);
+}
+.faq-item[open] .faq-plus {
+  transform: rotate(45deg);
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  @supports (interpolate-size: allow-keywords) {
+    .faq-item {
+      interpolate-size: allow-keywords;
+    }
+    .faq-item::details-content {
+      block-size: 0;
+      overflow: clip;
+      transition:
+        block-size 0.3s var(--ease-out),
+        content-visibility 0.3s allow-discrete;
+    }
+    .faq-item[open]::details-content {
+      block-size: auto;
+    }
+  }
+}
+
+/* ——— Финал: кинохлопушка ——— */
+.clap-stick {
+  height: 28px;
+  border: 3px solid #17140f;
+  background: repeating-linear-gradient(-60deg, #17140f 0 18px, #f3eee3 18px 36px);
+}
+.clap-top {
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 3px;
+  transform-origin: 10px 100%;
+  background: repeating-linear-gradient(60deg, #17140f 0 18px, #f3eee3 18px 36px);
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .clap-top {
+    transition: transform 0.18s cubic-bezier(0.6, 0, 0.9, 0.5) 0.6s;
+  }
+  .motion .clap:not([data-shown]) .clap-top {
+    transform: rotate(-16deg);
+  }
+  .clap[data-shown] .clap-body {
+    animation: clap-thud 0.2s ease-out 0.78s;
+  }
+}
+@keyframes clap-thud {
+  40% {
+    transform: translateY(3px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

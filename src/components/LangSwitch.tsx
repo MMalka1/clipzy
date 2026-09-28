@@ -31,7 +31,7 @@ export default function LangSwitch({ className = "", compact = false }: { classN
         type="button"
         onClick={() => choose(next)}
         aria-label={locale === "ru" ? "Switch to English" : "Переключить на русский"}
-        className={`flex h-8 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong font-mono text-[11px] uppercase text-dim transition-colors hover:text-fg ${
+        className={`relative flex h-8 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong before:absolute before:-inset-1.5 before:content-[''] font-mono text-[11px] uppercase text-dim transition-colors hover:text-fg ${
           pending ? "opacity-60" : ""
         } ${className}`}
       >

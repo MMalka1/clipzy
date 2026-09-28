@@ -20,6 +20,8 @@ export default function ColorSwatches({
 }) {
   const customLabel = captions[useLocale()].customColor;
   const dim = size === "sm" ? "h-6 w-6" : "h-8 w-8";
+  // Крупные кружки — на лендинге, с телефона: невидимая зона нажатия до 44px
+  const hit = size === "md" ? "before:absolute before:-inset-1.5 before:content-['']" : "";
   const custom = value !== null && !options.some((o) => o.value === value);
 
   return (
@@ -35,7 +37,7 @@ export default function ColorSwatches({
             aria-label={o.name}
             title={o.name}
             onClick={() => onChange(o.value)}
-            className={`${dim} relative shrink-0 cursor-pointer rounded-full transition-transform hover:scale-110 ${
+            className={`${dim} ${hit} relative shrink-0 cursor-pointer rounded-full transition-transform hover:scale-110 ${
               on ? "ring-2 ring-fg ring-offset-2 ring-offset-ink" : "ring-1 ring-white/15"
             }`}
             style={

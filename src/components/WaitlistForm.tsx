@@ -34,7 +34,7 @@ export default function WaitlistForm({ tone = "dark" }: { tone?: "dark" | "accen
   }
 
   return (
-    <div className="w-full max-w-md">
+    <div className={`w-full max-w-md ${accent && state === "ok" ? "relative pb-14" : ""}`}>
       <form onSubmit={submit} className={`flex h-13 rounded-xl p-1 ${
           accent ? "bg-ink text-fg shadow-[0_12px_30px_-12px_rgba(0,0,0,0.5)]" : "border border-line-strong bg-panel focus-within:border-dim"
         }`}>
@@ -69,12 +69,18 @@ export default function WaitlistForm({ tone = "dark" }: { tone?: "dark" | "accen
       <p
         role="status"
         className={`mt-3 flex min-h-5 items-center gap-1.5 text-sm ${
-          state === "error" ? (accent ? "font-medium text-[#b3261e]" : "text-rec") : accent ? "text-ink/70" : "text-dim"
+          state === "error" ? (accent ? "font-medium text-[#b3261e]" : "text-rec") : accent ? "text-on-signal/80" : "text-dim"
         }`}
       >
-        {state === "ok" && <Check className={`h-4 w-4 ${accent ? "text-ink" : "text-signal"}`} aria-hidden="true" />}
+        {state === "ok" && <Check className={`h-4 w-4 shrink-0 ${accent ? "text-on-signal" : "text-signal"}`} aria-hidden="true" />}
         {message}
       </p>
+      {/* на купоне раннего доступа — штамп; сообщение выше всё равно объявляется скринридеру */}
+      {accent && state === "ok" && (
+        <span className="stamp stamp-ok" aria-hidden="true">
+          {t.stamp}
+        </span>
+      )}
     </div>
   );
 }
