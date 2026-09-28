@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LangSwitch from "@/components/LangSwitch";
+import LegalLinks from "@/components/LegalLinks";
 import Logo from "@/components/Logo";
 import profile from "@/i18n/dict/profile";
 import { getLocale } from "@/i18n/server";
@@ -16,9 +17,10 @@ export default function ProfilePage() {
         <Logo />
         <LangSwitch />
       </header>
-      <div className="mx-auto w-full max-w-3xl flex-1 px-5 pb-20 pt-4">
+      <div className="mx-auto w-full max-w-3xl flex-1 px-5 pb-12 pt-4">
         <ProfileView />
       </div>
+      <LegalLinks className="px-5 pb-8" />
     </main>
   );
 }

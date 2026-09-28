@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import AuthForm from "@/components/AuthForm";
 import LangSwitch from "@/components/LangSwitch";
+import LegalLinks from "@/components/LegalLinks";
 import Logo from "@/components/Logo";
 import { getProviders } from "@/lib/providers";
 import { getLocale } from "@/i18n/server";
@@ -41,6 +42,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           </div>
         </div>
       </div>
+      <LegalLinks className="px-5 pb-8" />
     </main>
   );
 }

@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import AuthModal from "@/components/AuthModal";
+import LegalLinks from "@/components/LegalLinks";
 import LangSwitch from "@/components/LangSwitch";
 import { Wordmark } from "@/components/Logo";
 import UserMenu from "@/components/UserMenu";
@@ -1019,6 +1020,7 @@ export default function Editor() {
             )}
           </div>
         </div>
+        <LegalLinks className="px-5 pb-6" />
       </div>
     );
   }
