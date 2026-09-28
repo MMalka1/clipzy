@@ -4,7 +4,7 @@
  */
 export const SUPPORT = {
   email: "", // почта поддержки, например support@…
-  telegram: "", // username в Telegram без @ — личка поддержки
+  telegram: "clipzysupport", // username в Telegram без @ — личка поддержки
   bot: "", // username бота поддержки без @
 };
 
