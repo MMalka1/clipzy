@@ -86,12 +86,12 @@ const ru = {
   pricing: {
     title: "Сколько стоит",
     plans: [
-      { name: "Попробовать", price: "0 $", note: "3 видео в день, водяной знак по краям" },
-      { name: "Pro", price: "15 $ / мес", note: "без водяного знака, 300 минут в месяц, все стили" },
-      { name: "Studio", price: "39 $ / мес", note: "без лимита минут, свой шрифт и логотип, всё сразу пачкой" },
+      { name: "Попробовать", price: "0 ₽", note: "3 видео в день, водяной знак по краям" },
+      { name: "Pro", price: "990 ₽ / мес", note: "без водяного знака, 300 минут в месяц, все стили" },
+      { name: "Studio", price: "2 490 ₽ / мес", note: "без лимита минут, свой шрифт и логотип, всё сразу пачкой" },
     ],
     asideNote: "кстати:",
-    aside: "Studio можно купить навсегда за 149 $, без подписки.",
+    aside: "Studio можно купить навсегда за 9 900 ₽, без подписки.",
     cta: "Начать бесплатно",
   },
 
@@ -102,7 +102,7 @@ const ru = {
       ["Какие видео подходят?", "Любые, где говорит человек: эфиры, подкасты, интервью, кружки, вебинары."],
       ["А если распознает с ошибками?", "Текст правится перед скачиванием, как обычный документ. Тайминг не сбивается."],
       ["Чем лучше Opus Clip?", "Нормально понимает русский, принимает оплату из России и умеет вырезать слова-паразиты."],
-      ["Можно оплатить из России?", "Да, российскими картами. И зарубежными тоже."],
+      ["Можно оплатить из России?", "Да, в рублях — по СБП."],
       ["Кому принадлежат видео?", "Вам. Мы не показываем их никому и не учим на них нейросети."],
     ] as [string, string][],
   },
@@ -110,8 +110,8 @@ const ru = {
   early: {
     title: "Ранний доступ",
     before: "Когда откроем оплату, первым в списке дадим Studio навсегда за ",
-    price: "49 $",
-    after: " вместо 149. Оставьте почту, напишем один раз.",
+    price: "3 900 ₽",
+    after: " вместо 9 900. Оставьте почту, напишем один раз.",
   },
 
   playground: {
@@ -221,12 +221,12 @@ const en: typeof ru = {
   pricing: {
     title: "What it'll cost",
     plans: [
-      { name: "Free", price: "$0", note: "3 videos a day, watermark on the edges" },
-      { name: "Pro", price: "$15 / mo", note: "no watermark, 300 minutes a month, every style" },
-      { name: "Studio", price: "$39 / mo", note: "unlimited minutes, your own font and logo, batch everything at once" },
+      { name: "Free", price: "0 ₽", note: "3 videos a day, watermark on the edges" },
+      { name: "Pro", price: "990 ₽ / mo", note: "no watermark, 300 minutes a month, every style" },
+      { name: "Studio", price: "2,490 ₽ / mo", note: "unlimited minutes, your own font and logo, batch everything at once" },
     ],
     asideNote: "by the way:",
-    aside: "Studio will also come as a one-time $149 purchase. No subscription.",
+    aside: "Studio will also come as a one-time 9,900 ₽ purchase. No subscription.",
     cta: "Start for free",
   },
 
@@ -245,8 +245,8 @@ const en: typeof ru = {
   early: {
     title: "Early access",
     before: "When we switch on payments, everyone on this list gets Studio forever for ",
-    price: "$49",
-    after: " instead of $149. Leave your email, we'll write exactly once.",
+    price: "3,900 ₽",
+    after: " instead of 9,900 ₽. Leave your email, we'll write exactly once.",
   },
 
   playground: {
