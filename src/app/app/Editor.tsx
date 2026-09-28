@@ -206,7 +206,7 @@ export default function Editor() {
   // Машина спит: недавние проекты — по кнопке (она будит движок)
   const wakeForRecent = useCallback(() => {
     wakeEngine().then(async (ok) => {
-      if (!ok) return;
+      if (!ok) return setEngineOk(false); // лимит или ошибка — покажем причину вместо «онлайн»
       try {
         setUser((await engineSession()).user);
         setRecent(await listJobs());
@@ -856,7 +856,7 @@ export default function Editor() {
                     <p className="mt-1 text-sm leading-relaxed text-dim">
                       {wake.state === "quota" ? t.quotaText : t.setupFailedText}
                     </p>
-                    {wake.state === "failed" && wake.detail && (
+                    {(wake.state === "failed" || wake.state === "quota") && wake.detail && (
                       <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-md bg-raised p-2 font-mono text-[11px] text-faint">
                         {wake.detail}
                       </pre>

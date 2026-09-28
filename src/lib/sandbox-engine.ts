@@ -33,7 +33,7 @@ export type EngineState =
   | { state: "installing"; step: string }
   | { state: "starting" }
   | { state: "failed"; detail: string }
-  | { state: "quota" }
+  | { state: "quota"; detail: string }
   | { state: "unavailable"; detail: string };
 
 type Bundle = { files: { path: string; content: Buffer }[]; code: string; deps: string };
@@ -180,7 +180,8 @@ function explain(e: unknown): EngineState {
   const text = e instanceof Error ? e.message : String(e);
   const status = (e as { response?: Response })?.response?.status ?? 0;
   console.error("[sandbox]", status, text);
-  if (status === 402 || /quota|limit exceeded|paused|payment required/i.test(text)) return { state: "quota" };
+  // Текст ошибки отдаём дальше: по нему видно, лимит это или что-то другое (регион, настройка тарифа)
+  if (status === 402 || /quota|limit exceeded|paused|payment required/i.test(text)) return { state: "quota", detail: text.slice(0, 300) };
   // Машина как раз засыпает или просыпается, сеть моргнула — это пройдёт, браузер спросит ещё раз
   if (status === 410 || status === 422 || status === 429 || status >= 500 || /stopping|snapshotting|timeout|ECONNRESET|fetch failed/i.test(text)) {
     return { state: "starting" };

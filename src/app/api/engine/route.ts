@@ -23,6 +23,8 @@ export async function POST(request: Request) {
   const result = body.peek ? await peekEngine() : await ensureEngine({ retry: Boolean(body.retry) });
   // Журнал установки — только создателю: остальным хватит «не получилось»
   const plan = (session.user as { plan?: string }).plan;
-  if ((result.state === "failed" || result.state === "unavailable") && plan !== "creator") result.detail = "";
+  if ((result.state === "failed" || result.state === "unavailable") && plan !== "creator") {
+    result.detail = "";
+  }
   return Response.json(result, { headers: { "Cache-Control": "no-store" } });
 }

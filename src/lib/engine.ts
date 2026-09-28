@@ -254,7 +254,7 @@ export type WakeState =
   | { state: "installing"; step: string }
   | { state: "starting" }
   | { state: "failed"; detail: string }
-  | { state: "quota" }
+  | { state: "quota"; detail?: string }
   | { state: "unavailable"; detail: string };
 
 /** Ограничения бесплатного сервера: видео длиннее — не берём (узнаём, когда движок проснётся). */
