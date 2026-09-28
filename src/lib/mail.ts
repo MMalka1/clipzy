@@ -22,8 +22,13 @@ export async function sendMail(to: string, subject: string, text: string, link?:
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111">
       <p style="font-size:22px;font-weight:800;margin:0 0 16px">clip<span style="color:#e0b800">zy</span></p>
-      <p style="font-size:16px;line-height:1.5">${text}</p>
+      <p style="font-size:16px;line-height:1.5">${escapeHtml(text).replace(/\n/g, "<br>")}</p>
       ${link ? `<p><a href="${link}" style="display:inline-block;background:#ffd60a;color:#111;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">${subject}</a></p>` : ""}
     </div>`;
   await transport.sendMail({ from: process.env.MAIL_FROM, to, subject, text: link ? `${text}\n${link}` : text, html });
+}
+
+/** В письмо может попасть текст пользователя (обращение в поддержку) — HTML из него не исполняем. */
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }

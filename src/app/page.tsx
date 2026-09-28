@@ -5,6 +5,7 @@ import IntroVideo from "@/components/IntroVideo";
 import { HandArrow, HandCheck, Note } from "@/components/Hand";
 import LangSwitch from "@/components/LangSwitch";
 import Logo, { LogoIcon } from "@/components/Logo";
+import SiteFooter from "@/components/SiteFooter";
 import StylePlayground from "@/components/StylePlayground";
 import UserMenu from "@/components/UserMenu";
 import WaitlistForm from "@/components/WaitlistForm";
@@ -247,27 +248,7 @@ export default async function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-5 py-8 text-sm text-dim sm:flex-row sm:items-center sm:justify-between">
-          <Logo size="sm" label={t.logoHome} />
-          <nav aria-label={t.navFooter} className="flex flex-wrap gap-x-6 gap-y-2">
-            {nav.map((n) => (
-              <a key={n.href} href={n.href} className="hover:text-fg">
-                {n.label}
-              </a>
-            ))}
-            <Link href="/app" className="hover:text-fg">
-              {t.editor}
-            </Link>
-          </nav>
-          <span className="flex items-center gap-4">
-            <LangSwitch />
-            <span className="flex items-center gap-2">
-              <LogoIcon className="h-5 w-5" /> © 2026 Clipzy
-            </span>
-          </span>
-        </div>
-      </footer>
+      <SiteFooter logoLabel={t.logoHome} />
     </div>
   );
 }

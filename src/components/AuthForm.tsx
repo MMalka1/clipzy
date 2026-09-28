@@ -207,7 +207,15 @@ export default function AuthForm({
         )}
         {mode === "signup" && (
           <p className="text-xs leading-relaxed text-faint">
-            {t.terms}
+            {t.terms[0]}
+            <a href="/terms" target="_blank" className="underline hover:text-fg">
+              {t.terms[1]}
+            </a>
+            {t.terms[2]}
+            <a href="/privacy" target="_blank" className="underline hover:text-fg">
+              {t.terms[3]}
+            </a>
+            {t.terms[4]}
           </p>
         )}
       </div>

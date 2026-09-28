@@ -98,3 +98,69 @@ export async function dropGuestMove(from: string) {
   if (pg) await pg.query("delete from guest_moves where from_id = $1", [from]);
   else localDb().prepare("delete from guest_moves where from_id = ?").run(from);
 }
+
+/* ——— Обращения в поддержку (страница /support) ——— */
+export type Ticket = {
+  id: number;
+  email: string;
+  topic: string;
+  message: string;
+  userId: string | null;
+  status: "open" | "closed";
+  createdAt: string;
+};
+
+const TICKETS_PG = `create table if not exists support_tickets (
+  id serial primary key, email text not null, topic text not null, message text not null,
+  user_id text, ip text, status text not null default 'open', created_at timestamptz not null default now())`;
+const TICKETS_SQLITE = `create table if not exists support_tickets (
+  id integer primary key autoincrement, email text not null, topic text not null, message text not null,
+  user_id text, ip text, status text not null default 'open', created_at text not null)`;
+
+/** Новое обращение. Возвращает номер или null, если с этого адреса за час их уже слишком много. */
+export async function createTicket(t: { email: string; topic: string; message: string; userId: string | null; ip: string }) {
+  if (pg) {
+    await pg.query(TICKETS_PG);
+    const recent = await pg.query("select count(*)::int as n from support_tickets where ip = $1 and created_at > now() - interval '1 hour'", [t.ip]);
+    if (recent.rows[0].n >= 5) return null;
+    const r = await pg.query(
+      "insert into support_tickets (email, topic, message, user_id, ip) values ($1, $2, $3, $4, $5) returning id",
+      [t.email, t.topic, t.message, t.userId, t.ip],
+    );
+    return r.rows[0].id as number;
+  }
+  const db = localDb();
+  db.exec(TICKETS_SQLITE);
+  const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+  const n = db.prepare("select count(*) as n from support_tickets where ip = ? and created_at > ?").get(t.ip, hourAgo) as { n: number };
+  if (n.n >= 5) return null;
+  const r = db
+    .prepare("insert into support_tickets (email, topic, message, user_id, ip, created_at) values (?, ?, ?, ?, ?, ?)")
+    .run(t.email, t.topic, t.message, t.userId, t.ip, new Date().toISOString());
+  return Number(r.lastInsertRowid);
+}
+
+export async function listTickets(): Promise<Ticket[]> {
+  const map = (x: Record<string, unknown>): Ticket => ({
+    id: Number(x.id),
+    email: String(x.email),
+    topic: String(x.topic),
+    message: String(x.message),
+    userId: (x.user_id as string | null) ?? null,
+    status: x.status === "closed" ? "closed" : "open",
+    createdAt: x.created_at instanceof Date ? x.created_at.toISOString() : String(x.created_at),
+  });
+  if (pg) {
+    await pg.query(TICKETS_PG);
+    const r = await pg.query("select * from support_tickets order by (status = 'open') desc, id desc limit 200");
+    return r.rows.map(map);
+  }
+  const db = localDb();
+  db.exec(TICKETS_SQLITE);
+  return (db.prepare("select * from support_tickets order by (status = 'open') desc, id desc limit 200").all() as Record<string, unknown>[]).map(map);
+}
+
+export async function setTicketStatus(id: number, status: "open" | "closed") {
+  if (pg) await pg.query("update support_tickets set status = $1 where id = $2", [status, id]);
+  else localDb().prepare("update support_tickets set status = ? where id = ?").run(status, id);
+}
