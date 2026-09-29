@@ -80,6 +80,15 @@ const ru = {
     tail: "…и так с каждым клипом",
   },
 
+  beforeAfter: {
+    title: "Было → стало",
+    mark: "стало",
+    lead: "Слева — запись подкаста как есть. Справа — рилс, который Clipzy сделал из неё сам: кадр на лице, субтитры, заголовок.",
+    before: "ДО · эфир 16:9",
+    after: "ПОСЛЕ · рилс 9:16",
+    hint: "← тяните →",
+    aria: "Сравнить: до и после",
+  },
   example: {
     title: "Вот как это выглядит",
     mark: "выглядит",
@@ -331,6 +340,15 @@ const en: typeof ru = {
     tail: "…for every single clip",
   },
 
+  beforeAfter: {
+    title: "Before → after",
+    mark: "after",
+    lead: "Left: the podcast recording as it is. Right: the reel Clipzy made from it on its own — face in frame, captions, a hook.",
+    before: "BEFORE · 16:9 stream",
+    after: "AFTER · 9:16 reel",
+    hint: "← drag →",
+    aria: "Compare before and after",
+  },
   example: {
     title: "Here's what it looks like",
     mark: "looks like",

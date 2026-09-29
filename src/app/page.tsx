@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowDown, Scissors, Send } from "lucide-react";
 import CtaIcon from "@/components/CtaIcon";
 import DemoReel from "@/components/DemoReel";
+import BeforeAfter from "@/components/BeforeAfter";
 import ExampleCut from "@/components/ExampleCut";
 import FeatureDemos from "@/components/FeatureDemos";
 import FinalClap from "@/components/FinalClap";
@@ -161,6 +162,17 @@ export default async function Home() {
                 {t.hero.reelsNote}
               </Note>
             </div>
+          </div>
+        </section>
+
+        {/* «Было → стало»: тот же эфир до и после — ручку тянут */}
+        <section className="mx-auto max-w-5xl px-5 pb-14 md:pb-24">
+          <h2 data-reveal="up" className={H2}>
+            <Marked text={t.beforeAfter.title} mark={t.beforeAfter.mark} />
+          </h2>
+          <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-dim sm:text-[18px]">{t.beforeAfter.lead}</p>
+          <div className="mt-8">
+            <BeforeAfter t={t.beforeAfter} />
           </div>
         </section>
 
