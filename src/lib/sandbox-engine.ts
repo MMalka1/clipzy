@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { Sandbox } from "@vercel/sandbox";
+import { Sandbox, StreamError } from "@vercel/sandbox";
 import { dropGuestMove, pendingGuestMoves } from "./db";
 
 /**
@@ -25,7 +25,9 @@ const ROOT = "/vercel/sandbox/clipzy";
 const PORT = 8000;
 const IDLE_MS = 12 * 60_000; // столько машина живёт после последнего знака жизни от пользователя
 const MODEL = process.env.CLIPZY_WHISPER_MODEL || "large-v3-turbo";
-const MAX_STARTS = 3; // движок падает при запуске столько раз подряд — показываем ошибку, а не крутим вечно
+// Движок столько раз запустился и так и не ответил — показываем ошибку, а не крутим вечно.
+// Здоровый ответ /health обнуляет счётчик (см. STATUS): задание, которое роняет движок, отсечёт сам движок (MAX_ATTEMPTS)
+const MAX_STARTS = 3;
 
 export type EngineState =
   | { state: "online"; url: string; busy: number; maxMinutes: number | null }
@@ -121,7 +123,10 @@ const RUN = `B=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo boot); 
 /** PID процессов, которые держат блокировку движка, — это сам сервер */
 const HOLDERS = `for f in /proc/[0-9]*/fd/*; do [ "$(readlink "$f" 2>/dev/null)" = ${LOCK} ] && { f=\${f#/proc/}; echo "\${f%%/*}"; }; done | sort -u`;
 
-/** Одним вызовом: установлен ли движок, какая версия кода на диске, жив ли и отвечает ли сервер. */
+/**
+ * Одним вызовом: установлен ли движок, какая версия кода на диске, жив ли и отвечает ли сервер.
+ * Сервер ответил — счётчик запусков этого сеанса обнуляем: MAX_STARTS считает только запуски, которые так и не поднялись.
+ */
 const STATUS = `R=${ROOT}; mkdir -p $R/engine; ${RUN}
 echo "ready=$(cat $R/ready 2>/dev/null)"
 echo "state=$(cat $R/setup.state 2>/dev/null)"
@@ -129,8 +134,9 @@ echo "failed=$(cat $R/failed 2>/dev/null)"
 echo "code=$(cat $R/engine/.version 2>/dev/null)"
 if flock -n /tmp/clipzy-setup.lock true 2>/dev/null; then echo setup=0; else echo setup=1; fi
 if flock -n ${LOCK} true 2>/dev/null; then echo alive=0; else echo alive=1; fi
+H=$(curl -s -m 3 http://127.0.0.1:${PORT}/health); echo "health=$H"
+case "$H" in *'"ok":true'*|*'"ok": true'*) [ -f $STF ] && echo 0 >$STF;; esac
 echo "starts=$(cat $STF 2>/dev/null || echo 0)"
-echo "health=$(curl -s -m 3 http://127.0.0.1:${PORT}/health)"
 echo "log=$(tail -c 700 $R/setup.log 2>/dev/null | tr '\\n' ' ')"
 echo "elog=$(tail -c 700 $R/engine.log 2>/dev/null | tr '\\n' ' ')"`;
 
@@ -199,6 +205,14 @@ function explain(e: unknown): EngineState {
   if (status === 410 || status === 422 || status === 429 || status >= 500 || /stopping|snapshotting|timeout|ECONNRESET|fetch failed/i.test(text)) {
     return { state: "starting" };
   }
+  // Оборвался поток вывода команды (машина уснула посреди вызова) — тоже временно: следующий запрос её разбудит
+  if (
+    e instanceof StreamError ||
+    (e as Error)?.name === "StreamError" ||
+    /stream ended|terminated|other side closed|socket hang up/i.test(text)
+  ) {
+    return { state: "starting" };
+  }
   return { state: "unavailable", detail: text.slice(0, 300) };
 }
 
@@ -262,44 +276,54 @@ export async function ensureEngine({ retry = false } = {}): Promise<EngineState>
     const [sb, b] = await Promise.all([Sandbox.getOrCreate(sandboxParams), loadBundle()]);
     // getOrCreate не меняет настройки уже созданной машины — сон через IDLE_MS задаём явно
     if (sb.timeout !== IDLE_MS) await sb.update({ timeout: IDLE_MS }).catch(() => {});
-    let st = parseStatus(await sh(sb, STATUS)); // спящая машина проснётся на этом вызове
-    await keepAwake(sb);
-
-    // Код обновляем, пока движок свободен: иначе обработка на ходу подхватит новые файлы вперемешку со старыми
-    if (st.code !== b.code && !st.health?.busy) {
-      await sb.writeFiles(b.files.map((f) => ({ path: `${ROOT}/engine/${f.path}`, content: f.content })));
-      await sh(sb, `echo ${b.code} > ${ROOT}/engine/.version`);
-      st = { ...st, code: b.code };
-    }
-
-    if (st.ready !== b.deps) {
-      if (st.setup) return { state: "installing", step: st.state || "system" };
-      // Ставить новые зависимости можно только с новыми файлами — иначе отметим «готово» по старому списку
-      if (st.code !== b.code) return online(sb, st);
-      // Упавшую установку повторяем сами, только если с тех пор поменялись скрипт или зависимости
-      if (st.state === "failed" && st.failed === b.deps && !retry) return { state: "failed", detail: st.log.slice(-500) };
-      await sb.runCommand({ cmd: "bash", args: ["-c", SETUP(b.deps)], env: { CLIPZY_WHISPER_MODEL: MODEL }, detached: true });
-      return { state: "installing", step: "system" };
-    }
-
-    const h = st.health;
-    if (!h?.ok) {
-      if (st.alive) return { state: "starting" }; // Python ещё загружается
-      if (st.starts >= MAX_STARTS && !retry) return { state: "failed", detail: st.elog.slice(-500) };
-      if (retry) await sh(sb, `${RUN}; echo 0 >$STF`);
-      await sb.runCommand({ cmd: "bash", args: ["-c", START], env: { ...engineEnv(), CLIPZY_VERSION: b.code }, detached: true });
-      return { state: "starting" };
-    }
-    // Новый код или настройки — перезапускаем, но только свободный движок: обработку и загрузки не обрываем
-    if (h.version !== b.code && !h.busy && st.code === b.code) {
-      await sh(sb, STOP);
-      await sb.runCommand({ cmd: "bash", args: ["-c", START], env: { ...engineEnv(), CLIPZY_VERSION: b.code }, detached: true });
-      return { state: "starting" };
-    }
-    return online(sb, st);
+    const r = await advance(sb, b, retry);
+    // Сломанный сеанс не продлеваем: пусть уснёт — следующее пробуждение придёт с новым boot_id и чистым счётчиком
+    if (r.state !== "failed") await keepAwake(sb);
+    return r;
   } catch (e) {
     return explain(e);
   }
+}
+
+/** Один шаг пробуждения: смотрим, что на машине, и запускаем следующее действие (обновить код, поставить, запустить). */
+async function advance(sb: Sandbox, b: Bundle, retry: boolean): Promise<EngineState> {
+  let st = parseStatus(await sh(sb, STATUS)); // спящая машина проснётся на этом вызове
+
+  // Код обновляем, только пока движок свободен: иначе обработка на ходу подхватит новые файлы вперемешку со старыми.
+  // Не отвечает, но жив (Python ещё загружается) или идёт установка — тоже ждём: файлы перепишем на следующем шаге
+  const idle = !st.setup && (st.health?.ok ? !st.health.busy : !st.alive);
+  if (st.code !== b.code && idle) {
+    await sb.writeFiles(b.files.map((f) => ({ path: `${ROOT}/engine/${f.path}`, content: f.content })));
+    // Новый код — новые попытки: падения старого кода не должны мешать запустить исправленный
+    await sh(sb, `${RUN}; echo ${b.code} > ${ROOT}/engine/.version; echo 0 >$STF`);
+    st = { ...st, code: b.code, starts: 0 };
+  }
+
+  if (st.ready !== b.deps) {
+    if (st.setup) return { state: "installing", step: st.state || "system" };
+    // Ставить новые зависимости можно только с новыми файлами — иначе отметим «готово» по старому списку
+    if (st.code !== b.code) return online(sb, st);
+    // Упавшую установку повторяем сами, только если с тех пор поменялись скрипт или зависимости
+    if (st.state === "failed" && st.failed === b.deps && !retry) return { state: "failed", detail: st.log.slice(-500) };
+    await sb.runCommand({ cmd: "bash", args: ["-c", SETUP(b.deps)], env: { CLIPZY_WHISPER_MODEL: MODEL }, detached: true });
+    return { state: "installing", step: "system" };
+  }
+
+  const h = st.health;
+  if (!h?.ok) {
+    if (st.alive) return { state: "starting" }; // Python ещё загружается
+    if (st.starts >= MAX_STARTS && !retry) return { state: "failed", detail: st.elog.slice(-500) };
+    if (retry) await sh(sb, `${RUN}; echo 0 >$STF`);
+    await sb.runCommand({ cmd: "bash", args: ["-c", START], env: { ...engineEnv(), CLIPZY_VERSION: b.code }, detached: true });
+    return { state: "starting" };
+  }
+  // Новый код или настройки — перезапускаем, но только свободный движок: обработку и загрузки не обрываем
+  if (h.version !== b.code && !h.busy && st.code === b.code) {
+    await sh(sb, STOP);
+    await sb.runCommand({ cmd: "bash", args: ["-c", START], env: { ...engineEnv(), CLIPZY_VERSION: b.code }, detached: true });
+    return { state: "starting" };
+  }
+  return online(sb, st);
 }
 
 async function online(sb: Sandbox, st: ReturnType<typeof parseStatus>): Promise<EngineState> {

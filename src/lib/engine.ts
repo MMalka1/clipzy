@@ -196,12 +196,13 @@ async function efetch(path: string, init: RequestInit = {}, retry = true, fresh 
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${token}`, "X-Lang": uiLang() },
     });
-  } catch (e) {
+  } catch {
     // Машина Vercel Sandbox уснула — будим и повторяем один раз
-    if (SANDBOX && retry && (await wakeEngine())) return efetch(path, init, false, fresh);
-    throw e;
+    if (SANDBOX && retry && (await wakeEngine({ background: true }))) return efetch(path, init, false, fresh);
+    // Вместо браузерного «Failed to fetch» — понятный текст на языке сайта
+    throw new Error(err().offline);
   }
-  if (SANDBOX && retry && res.status >= 502 && res.status <= 504 && (await wakeEngine())) {
+  if (SANDBOX && retry && res.status >= 502 && res.status <= 504 && (await wakeEngine({ background: true }))) {
     return efetch(path, init, false, fresh);
   }
   if (res.status === 401 && retry) {
@@ -254,12 +255,15 @@ async function askEngine(body: { peek?: boolean; retry?: boolean }): Promise<{ s
 /**
  * Будит движок и ждёт, пока он ответит (первая установка — до 10 минут, дальше — секунды).
  * Никогда не бросает исключений: false — движок недоступен, причину получат подписчики onState.
- * retry — повторить установку после ошибки.
+ * retry — повторить установку после ошибки. background — фоновый вызов (из efetch), а не действие человека.
  */
-export function wakeEngine(opts: { retry?: boolean; onState?: (s: WakeState) => void } = {}): Promise<boolean> {
+export function wakeEngine(
+  opts: { retry?: boolean; background?: boolean; onState?: (s: WakeState) => void } = {},
+): Promise<boolean> {
   if (!SANDBOX) return Promise.resolve(true);
-  // Только что не получилось — не долбим сервер (опрос проекта зовёт нас раз в секунду)
-  if (!opts.retry && lastFail && Date.now() - failedAt < 20_000) {
+  // Фоновые запросы после свежей неудачи сервер не долбят (опрос проекта зовёт нас раз в секунду).
+  // Действие человека — загрузка, ссылка, экспорт — всегда спрашивает сервер заново
+  if (opts.background && !opts.retry && lastFail && Date.now() - failedAt < 20_000) {
     opts.onState?.(lastFail);
     return Promise.resolve(false);
   }
@@ -351,10 +355,13 @@ export async function engineHealth(
   onState?: (s: WakeState) => void,
 ): Promise<{ ok: boolean; asleep?: boolean; ffmpeg?: boolean; nvenc?: boolean } | null> {
   if (SANDBOX) {
-    const s = await peekEngine();
+    const peek = await peekEngine();
+    // «Запуск» при подглядывании — сеть моргнула или машина как раз засыпает; будить её никто не будит, так что это «спит».
+    // Ход настоящего пробуждения показывают только сами пробуждения
+    const s: WakeState = peek.state === "starting" ? { state: "asleep" } : peek;
     onState?.(s);
     if (s.state === "online") return { ok: true };
-    if (s.state === "asleep" || s.state === "starting" || s.state === "installing") return { ok: true, asleep: true };
+    if (s.state === "asleep" || s.state === "installing") return { ok: true, asleep: true };
     return null;
   }
   try {

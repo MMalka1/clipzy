@@ -215,7 +215,18 @@ export default function Editor() {
       }
     });
   }, []);
-  useEffect(() => (SANDBOX ? subscribeWake(setWake) : undefined), []);
+  // Пробуждение не удалось (лимит или движок не запустился) — при загрузке, по ссылке или при экспорте:
+  // показываем причину и кнопку повтора, а не «движок онлайн»
+  useEffect(
+    () =>
+      SANDBOX
+        ? subscribeWake((st) => {
+            setWake(st);
+            if (st.state === "failed" || st.state === "quota") setEngineOk(false);
+          })
+        : undefined,
+    [],
+  );
   useEffect(loadEngine, [loadEngine]);
 
   useEffect(() => {
@@ -241,7 +252,8 @@ export default function Editor() {
     let checking = false;
     const tick = async () => {
       const now = live.current;
-      if (checking || document.visibilityState !== "visible") return;
+      // Скрытая вкладка сама машину не держит — но пока идёт работа (загрузка, обработка, рендер), продлеваем и в фоне
+      if (checking || (!now.busy && document.visibilityState !== "visible")) return;
       if (!now.busy && Date.now() - last > 5 * 60_000) return;
       if (now.stage === "upload") return; // на экране загрузки машину разбудит само действие
       checking = true;
@@ -1544,7 +1556,9 @@ export default function Editor() {
 
       {s.music && <audio ref={musicRef} src={musicUrl(s.music)} loop preload="auto" hidden />}
       {authAsk && <AuthModal reason={authAsk.reason} onClose={() => setAuthAsk(null)} onSuccess={afterAuth} />}
-      {render && <ExportDialog render={render} aspect={s.aspect} onClose={() => setRender(null)} onRetry={exportClip} />}
+      {render && (
+        <ExportDialog render={render} aspect={s.aspect} wake={wake} onClose={() => setRender(null)} onRetry={exportClip} />
+      )}
     </div>
   );
 }
@@ -1552,17 +1566,21 @@ export default function Editor() {
 function ExportDialog({
   render,
   aspect,
+  wake,
   onClose,
   onRetry,
 }: {
   render: RenderState;
   /** Формат клипа — чтобы плеер был нужной формы */
   aspect: Aspect;
+  /** Состояние движка в Vercel Sandbox: не проснулся из-за лимита или ошибки — объясняем это, а не «движок недоступен» */
+  wake: WakeState | null;
   onClose: () => void;
   onRetry: () => void;
 }) {
   const t = editor[useLocale()];
   const busy = render.status === "queued" || render.status === "rendering";
+  const down = wake?.state === "quota" || wake?.state === "failed" ? wake : null;
   return (
     <div
       role="dialog"
@@ -1615,9 +1633,23 @@ function ExportDialog({
 
         {render.status === "error" && (
           <>
-            <p className="mt-3 max-h-40 overflow-auto rounded-md bg-raised p-3 font-mono text-xs leading-relaxed text-dim">
-              {render.error}
-            </p>
+            {down && (
+              <div className="mt-3 flex items-start gap-3">
+                <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-signal" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="font-medium">{down.state === "quota" ? t.quotaTitle : t.setupFailedTitle}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-dim">
+                    {down.state === "quota" ? t.quotaText : t.setupFailedText}
+                  </p>
+                </div>
+              </div>
+            )}
+            {/* Движок не проснулся — вместо общего «недоступен» показываем подробности от сервера, если они есть */}
+            {(down ? down.detail : render.error) && (
+              <p className="mt-3 max-h-40 overflow-auto rounded-md bg-raised p-3 font-mono text-xs leading-relaxed text-dim">
+                {down ? down.detail : render.error}
+              </p>
+            )}
             <button
               onClick={onRetry}
               className="mt-4 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-line-strong text-sm hover:bg-raised"
@@ -1672,15 +1704,19 @@ function EngineBadge({ ok, wake }: { ok: boolean | null; wake?: WakeState | null
   const waiting =
     wake?.state === "installing" ? t.engineInstalling : wake?.state === "starting" ? t.engineStarting : null;
   const asleep = ok && wake?.state === "asleep";
+  // Последнее пробуждение не удалось — это «офлайн», даже если проверка при открытии страницы прошла
+  const down = wake?.state === "failed" || wake?.state === "quota" || wake?.state === "unavailable";
+  const online = ok && !down;
   return (
     <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[11px] text-dim">
       <span
         className={`h-1.5 w-1.5 rounded-full ${
-          ok === null || waiting ? "animate-pulse bg-faint" : asleep ? "bg-faint" : ok ? "bg-[#34d399]" : "bg-rec"
+          ok === null || waiting ? "animate-pulse bg-faint" : asleep ? "bg-faint" : online ? "bg-[#34d399]" : "bg-rec"
         }`}
         aria-hidden="true"
       />
-      {waiting ?? (asleep ? t.engineAsleep : ok === null ? t.engineChecking : ok ? t.engineOnline : t.engineOffline)}
+      {waiting ??
+        (asleep ? t.engineAsleep : ok === null ? t.engineChecking : online ? t.engineOnline : t.engineOffline)}
     </span>
   );
 }
