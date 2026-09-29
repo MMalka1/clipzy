@@ -1,4 +1,5 @@
 import type { Dict } from "../config";
+import type { SeoSlug } from "@/lib/seo-pages";
 
 /** Подвал сайта, документы и поддержка. */
 const ru = {
@@ -11,6 +12,15 @@ const ru = {
     pricing: "Цены",
     faq: "Вопросы",
     editor: "Редактор",
+    // Страницы под поисковые запросы (сами страницы — только на русском)
+    useCases: "Решения",
+    useCaseLinks: {
+      "narezka-podkasta": "Нарезка подкаста",
+      "subtitry-dlya-rils": "Субтитры для рилс",
+      "video-v-shorts": "Видео в шортс 9:16",
+      "rilsy-iz-vebinara": "Рилсы из вебинара",
+      "alternativa-opus-clip": "Аналог Opus Clip",
+    } as Record<SeoSlug, string>,
     privacy: "Политика конфиденциальности",
     terms: "Пользовательское соглашение",
     support: "Поддержка",
@@ -71,6 +81,14 @@ const en: typeof ru = {
     pricing: "Pricing",
     faq: "FAQ",
     editor: "Editor",
+    useCases: "Use cases",
+    useCaseLinks: {
+      "narezka-podkasta": "Podcast to Shorts",
+      "subtitry-dlya-rils": "Captions for Reels",
+      "video-v-shorts": "Video to 9:16 Shorts",
+      "rilsy-iz-vebinara": "Reels from webinars",
+      "alternativa-opus-clip": "Opus Clip alternative",
+    },
     privacy: "Privacy policy",
     terms: "Terms of service",
     support: "Support",
