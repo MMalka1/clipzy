@@ -13,6 +13,7 @@ import LangSwitch from "@/components/LangSwitch";
 import Logo, { LogoIcon } from "@/components/Logo";
 import Marked from "@/components/Marked";
 import PriceReceipt from "@/components/PriceReceipt";
+import PromoBanner from "@/components/PromoBanner";
 import RevealObserver from "@/components/RevealObserver";
 import SiteFooter from "@/components/SiteFooter";
 import StylePlayground from "@/components/StylePlayground";
@@ -56,6 +57,9 @@ export default async function Home() {
       >
         {t.skip}
       </a>
+
+      {/* Пришёл по ссылке с промокодом — напоминаем, что он включится при регистрации */}
+      <PromoBanner />
 
       <header className="site-head sticky top-0 z-40">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-2.5 min-[380px]:gap-4 min-[380px]:px-5 sm:py-3">

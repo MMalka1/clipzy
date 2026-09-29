@@ -199,3 +199,242 @@ export async function hit(key: string, max: number, windowSec: number): Promise<
 export function clientIp(h: Headers) {
   return (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || h.get("x-real-ip") || "local";
 }
+
+/*
+ * Таблицы для рекламы и промокодов создаём один раз на процесс, а не перед каждым запросом:
+ * события пишутся на каждую загрузку и экспорт.
+ */
+const created = new Set<string>();
+async function ensureTables(key: string, ddl: { pg: string[]; sqlite: string[] }) {
+  if (created.has(key)) return;
+  if (pg) for (const q of ddl.pg) await pg.query(q);
+  else for (const q of ddl.sqlite) localDb().exec(q);
+  created.add(key);
+}
+
+const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v));
+
+/* ——— События воронки: регистрация, загрузка, экспорт… (сводка — на /admin) ——— */
+const EVENTS = {
+  pg: [
+    `create table if not exists events (id bigserial primary key, name text not null, user_id text, source text,
+      created_at timestamptz not null default now())`,
+    "create index if not exists events_created_at on events (created_at)",
+  ],
+  sqlite: [
+    `create table if not exists events (id integer primary key autoincrement, name text not null, user_id text, source text,
+      created_at text not null)`,
+    "create index if not exists events_created_at on events (created_at)",
+  ],
+};
+
+export async function recordEvent(name: string, userId: string | null, source: string | null) {
+  await ensureTables("events", EVENTS);
+  if (pg) {
+    await pg.query("insert into events (name, user_id, source) values ($1, $2, $3)", [name, userId, source]);
+    return;
+  }
+  localDb()
+    .prepare("insert into events (name, user_id, source, created_at) values (?, ?, ?, ?)")
+    .run(name, userId, source, new Date().toISOString());
+}
+
+export type FunnelRow = { source: string | null; name: string; n: number };
+
+/** Сколько каких событий было с момента since — по источникам. */
+export async function funnel(since: Date): Promise<FunnelRow[]> {
+  await ensureTables("events", EVENTS);
+  const q = "select source, name, count(*) as n from events where created_at > %1 group by source, name";
+  const map = (x: Record<string, unknown>): FunnelRow => ({
+    source: (x.source as string | null) ?? null,
+    name: String(x.name),
+    n: Number(x.n),
+  });
+  if (pg) return (await pg.query(q.replace("%1", "$1"), [since])).rows.map(map);
+  return (localDb().prepare(q.replace("%1", "?")).all(since.toISOString()) as Record<string, unknown>[]).map(map);
+}
+
+/* ——— Промокоды: пробный Pro на N дней, одна активация на аккаунт ——— */
+export type PromoCode = {
+  code: string;
+  plan: string;
+  days: number;
+  maxUses: number | null;
+  used: number;
+  label: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+};
+
+const PROMO = {
+  pg: [
+    `create table if not exists promo_codes (code text primary key, plan text not null default 'pro', days integer not null default 7,
+      max_uses integer, used integer not null default 0, label text, created_at timestamptz not null default now(), expires_at timestamptz)`,
+    `create table if not exists promo_redemptions (code text not null, user_id text not null unique,
+      created_at timestamptz not null default now())`,
+  ],
+  sqlite: [
+    `create table if not exists promo_codes (code text primary key, plan text not null default 'pro', days integer not null default 7,
+      max_uses integer, used integer not null default 0, label text, created_at text not null, expires_at text)`,
+    `create table if not exists promo_redemptions (code text not null, user_id text not null unique, created_at text not null)`,
+  ],
+};
+
+const mapPromo = (x: Record<string, unknown>): PromoCode => ({
+  code: String(x.code),
+  plan: String(x.plan),
+  days: Number(x.days),
+  maxUses: x.max_uses == null ? null : Number(x.max_uses),
+  used: Number(x.used),
+  label: (x.label as string | null) ?? null,
+  createdAt: iso(x.created_at) ?? "",
+  expiresAt: iso(x.expires_at),
+});
+
+/** Новый промокод. false — такой код уже есть. */
+export async function createPromoCode(p: {
+  code: string;
+  plan: string;
+  days: number;
+  maxUses: number | null;
+  label: string | null;
+  expiresAt: Date | null;
+}): Promise<boolean> {
+  await ensureTables("promo", PROMO);
+  if (pg) {
+    const r = await pg.query(
+      "insert into promo_codes (code, plan, days, max_uses, label, expires_at) values ($1, $2, $3, $4, $5, $6) on conflict do nothing",
+      [p.code, p.plan, p.days, p.maxUses, p.label, p.expiresAt],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  const r = localDb()
+    .prepare("insert or ignore into promo_codes (code, plan, days, max_uses, label, created_at, expires_at) values (?, ?, ?, ?, ?, ?, ?)")
+    .run(p.code, p.plan, p.days, p.maxUses, p.label, new Date().toISOString(), p.expiresAt?.toISOString() ?? null);
+  return Number(r.changes) > 0;
+}
+
+export async function listPromoCodes(): Promise<PromoCode[]> {
+  await ensureTables("promo", PROMO);
+  const q = "select * from promo_codes order by created_at desc limit 200";
+  if (pg) return (await pg.query(q)).rows.map(mapPromo);
+  return (localDb().prepare(q).all() as Record<string, unknown>[]).map(mapPromo);
+}
+
+export async function getPromoCode(code: string): Promise<PromoCode | null> {
+  await ensureTables("promo", PROMO);
+  if (pg) {
+    const r = await pg.query("select * from promo_codes where code = $1", [code]);
+    return r.rows[0] ? mapPromo(r.rows[0]) : null;
+  }
+  const row = localDb().prepare("select * from promo_codes where code = ?").get(code) as Record<string, unknown> | undefined;
+  return row ? mapPromo(row) : null;
+}
+
+/** Выключить промокод: срок действия — «уже закончился». */
+export async function endPromoCode(code: string) {
+  await ensureTables("promo", PROMO);
+  if (pg) {
+    await pg.query("update promo_codes set expires_at = now() where code = $1 and (expires_at is null or expires_at > now())", [code]);
+    return;
+  }
+  const now = new Date().toISOString();
+  localDb()
+    .prepare("update promo_codes set expires_at = ? where code = ? and (expires_at is null or expires_at > ?)")
+    .run(now, code, now);
+}
+
+/**
+ * Забрать одну активацию промокода для аккаунта. "already" — аккаунт уже активировал какой-то промокод,
+ * "gone" — код закончился или истёк (проверка и списание — одним запросом, без гонок).
+ */
+export async function claimPromoCode(code: string, userId: string): Promise<{ plan: string; days: number } | "already" | "gone"> {
+  await ensureTables("promo", PROMO);
+  if (pg) {
+    const ins = await pg.query("insert into promo_redemptions (code, user_id) values ($1, $2) on conflict (user_id) do nothing", [code, userId]);
+    if (!ins.rowCount) return "already";
+    const r = await pg.query(
+      `update promo_codes set used = used + 1
+        where code = $1 and (max_uses is null or used < max_uses) and (expires_at is null or expires_at > now())
+        returning plan, days`,
+      [code],
+    );
+    if (!r.rows[0]) {
+      await pg.query("delete from promo_redemptions where code = $1 and user_id = $2", [code, userId]);
+      return "gone";
+    }
+    return { plan: String(r.rows[0].plan), days: Number(r.rows[0].days) };
+  }
+  const db = localDb();
+  const now = new Date().toISOString();
+  const ins = db.prepare("insert or ignore into promo_redemptions (code, user_id, created_at) values (?, ?, ?)").run(code, userId, now);
+  if (!Number(ins.changes)) return "already";
+  const row = db
+    .prepare(
+      `update promo_codes set used = used + 1
+        where code = ? and (max_uses is null or used < max_uses) and (expires_at is null or expires_at > ?)
+        returning plan, days`,
+    )
+    .get(code, now) as { plan: string; days: number } | undefined;
+  if (!row) {
+    db.prepare("delete from promo_redemptions where code = ? and user_id = ?").run(code, userId);
+    return "gone";
+  }
+  return { plan: String(row.plan), days: Number(row.days) };
+}
+
+/** Вернуть активацию, если план включить не удалось. */
+export async function releasePromoCode(code: string, userId: string) {
+  if (pg) {
+    const r = await pg.query("delete from promo_redemptions where code = $1 and user_id = $2", [code, userId]);
+    if (r.rowCount) await pg.query("update promo_codes set used = greatest(used - 1, 0) where code = $1", [code]);
+    return;
+  }
+  const db = localDb();
+  const r = db.prepare("delete from promo_redemptions where code = ? and user_id = ?").run(code, userId);
+  if (Number(r.changes)) db.prepare("update promo_codes set used = max(used - 1, 0) where code = ?").run(code);
+}
+
+/*
+ * План пользователя пишем прямо в таблицу Better Auth ("user": plan и "planUntil" — дополнительные поля из auth.ts).
+ * Даты — как их хранит Better Auth: timestamptz в Postgres, ISO-строка в SQLite.
+ */
+
+/** Пробный план до until — только тому, у кого сейчас free или истёк срок. false — план уже другой. */
+export async function setTrialPlan(userId: string, plan: string, until: Date): Promise<boolean> {
+  if (pg) {
+    const r = await pg.query(
+      `update "user" set plan = $1, "planUntil" = $2, "updatedAt" = now()
+        where id = $3 and (plan = 'free' or ("planUntil" is not null and "planUntil" <= now()))`,
+      [plan, until, userId],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  const now = new Date().toISOString();
+  const r = localDb()
+    .prepare(
+      `update "user" set plan = ?, "planUntil" = ?, "updatedAt" = ?
+        where id = ? and (plan = 'free' or ("planUntil" is not null and "planUntil" <= ?))`,
+    )
+    .run(plan, until.toISOString(), now, userId, now);
+  return Number(r.changes) > 0;
+}
+
+/** Срок плана вышел — возвращаем free (если за это время план не продлили). creator не трогаем никогда. */
+export async function expireTrial(userId: string) {
+  if (pg) {
+    await pg.query(
+      `update "user" set plan = 'free', "planUntil" = null, "updatedAt" = now()
+        where id = $1 and plan <> 'creator' and "planUntil" is not null and "planUntil" <= now()`,
+      [userId],
+    );
+    return;
+  }
+  const now = new Date().toISOString();
+  localDb()
+    .prepare(
+      `update "user" set plan = 'free', "planUntil" = null, "updatedAt" = ?
+        where id = ? and plan <> 'creator' and "planUntil" is not null and "planUntil" <= ?`,
+    )
+    .run(now, userId, now);
+}

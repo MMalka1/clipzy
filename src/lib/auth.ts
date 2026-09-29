@@ -4,9 +4,11 @@ import { getMigrations } from "better-auth/db/migration";
 import { nextCookies } from "better-auth/next-js";
 import { anonymous } from "better-auth/plugins";
 import { avatarAllowed, parseUserImage } from "@/components/Avatar";
-import { authDatabase, queueGuestMove } from "./db";
+import { promoFromCookie, sourceFromCookie } from "./attribution";
+import { authDatabase, queueGuestMove, recordEvent } from "./db";
 import { sendMail } from "./mail";
 import { engineInternal } from "./engine-token";
+import { redeemPromo } from "./promo";
 import { telegramAuth } from "./telegram-auth";
 
 const google =
@@ -42,10 +44,36 @@ const options = {
   user: {
     additionalFields: {
       plan: { type: "string", defaultValue: "free", input: false },
+      // Откуда пришёл: «utm_source/utm_medium/utm_campaign» или «ref:…» — для сводки на /admin
+      source: { type: "string", required: false, input: false },
+      // До какого момента действует план (пробный Pro по промокоду); пусто — без срока
+      planUntil: { type: "date", required: false, input: false },
     },
   },
   databaseHooks: {
     user: {
+      create: {
+        // Метки рекламы из cookie cz_src (ставит компонент Attribution) — и гостю, и зарегистрированному
+        before: async (user, ctx) => {
+          const source = sourceFromCookie(ctx?.getHeader("cookie"));
+          return source ? { data: { ...user, source } } : undefined;
+        },
+        // Счётчик для /admin и промокод из ссылки: зарегистрировался — пробный Pro включается сам.
+        // Ошибки здесь не должны мешать регистрации
+        after: async (user, ctx) => {
+          const u = user as typeof user & { isAnonymous?: boolean | null; source?: string | null; plan?: string };
+          try {
+            await recordEvent(u.isAnonymous ? "guest" : "signup", u.id, u.source ?? null);
+            const code = u.isAnonymous ? null : promoFromCookie(ctx?.getHeader("cookie"));
+            if (code) {
+              const r = await redeemPromo({ ...u, planUntil: null }, code);
+              if (!r.ok) console.info(`[auth] промокод ${code} при регистрации не включён: ${r.error}`);
+            }
+          } catch (e) {
+            console.error("[auth] событие или промокод после регистрации:", e instanceof Error ? e.message : e);
+          }
+        },
+      },
       update: {
         before: async (data, ctx) => {
           const next = { ...data };
