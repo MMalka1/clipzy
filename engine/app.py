@@ -380,6 +380,7 @@ def track_for(job: dict, on_progress=lambda p: None, words: list[dict] | None = 
     sw, sh = meta["width"], meta["height"]
     cw = sh * 9 / 16 if sw / sh > 9 / 16 else sw
     frames = face_track.detect_faces(job["source"], meta, render.tool("ffmpeg"), on_progress)
+    job["people_v"] = face_track.PEOPLE_VERSION  # участников считали нынешней логикой
     samples = face_track.pick_track(frames)
     job["track"] = face_track.camera_path(samples, cw / sw)
     job["faces"] = [s for s in samples if s]
@@ -738,6 +739,9 @@ def get_job(job_id: str, request: Request, user: dict = Depends(current_user)):
         annotate(job)
         out = {k: job.get(k) for k in PUBLIC_JOB}
     out["error"] = i18n.tr(out["error"], i18n.lang_of(request.headers))
+    # Участников старых проектов считали прежней логикой (путала людей с картинками) — «пополам» им не предлагаем
+    if job.get("people_v") != face_track.PEOPLE_VERSION:
+        out["speakers"] = None
     return out
 
 
@@ -801,7 +805,7 @@ def run_render(rid: str):
             job["source"], job["meta"], words, r["request"], r["workdir"], r["file"],
             on_progress=lambda p: update(renders, rid, progress=round(p, 3)),
             plan=job.get("plan"), music_path=music_path(r["request"].get("music")), track=job.get("track"),
-            speakers=job.get("speakers"),
+            speakers=job.get("speakers") if job.get("people_v") == face_track.PEOPLE_VERSION else None,
         )
         update(renders, rid, status="done", progress=1.0, duration=result["duration"])
         save_render(rid)
@@ -965,7 +969,8 @@ def create_cover(job_id: str, req: CoverRequest, user: dict = Depends(current_us
     body["title"] = req.title[:120]
     body["watermark"] = user.get("plan", "free") == "free"
     out = os.path.join(job["dir"], f"cover_{uuid.uuid4().hex[:8]}.jpg")
-    render.render_cover(job["source"], job["meta"], body, out, track=job.get("track"), speakers=job.get("speakers"))
+    render.render_cover(job["source"], job["meta"], body, out, track=job.get("track"),
+                        speakers=job.get("speakers") if job.get("people_v") == face_track.PEOPLE_VERSION else None)
     return FileResponse(out, media_type="image/jpeg", filename="clipzy-cover.jpg")
 
 

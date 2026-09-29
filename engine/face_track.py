@@ -118,25 +118,55 @@ def detect_track(video_path: str, meta: dict, ffmpeg: str, on_progress=lambda p:
     return pick_track(detect_faces(video_path, meta, ffmpeg, on_progress))
 
 
+# Версия логики участников: поменяли её — старые проекты не предлагают «экран пополам» по устаревшим данным
+PEOPLE_VERSION = 2
+PERSON_DX, PERSON_DY = 0.07, 0.09  # насколько далеко от своего места может оказаться лицо того же человека
+
+
 def _people(frames: list[list[list[float]]]) -> list[dict]:
-    """Постоянные участники: лица, которые стоят на своём месте большую часть видео."""
-    pts = sorted((f[0], f[1], f[2]) for fr in frames for f in fr)
-    if not pts:
-        return []
-    groups, cur = [], [pts[0]]
-    for q in pts[1:]:
-        if q[0] - cur[-1][0] > 0.06:
-            groups.append(cur)
-            cur = []
-        cur.append(q)
-    groups.append(cur)
+    """Постоянные участники: живые люди, которые сидят на своём месте большую часть видео.
+
+    Лица группируем по месту в кадре (x и y). Участник — группа, где:
+    • лицо есть хотя бы в четверти видео;
+    • в каждый момент там одно лицо (колонка превью или чат с аватарками даёт по нескольку сразу);
+    • лицо не скачет по кадру и не меняет размер (превью, картинки и нарезка «реакций» — меняют).
+    """
+    n = len(frames)
+    clusters: list[dict] = []
+    for i, fr in enumerate(frames):
+        for f in fr:
+            cx, cy, size = f[0], f[1], f[2]
+            best = None
+            for c in clusters:
+                if abs(cx - c["x"]) < PERSON_DX and abs(cy - c["y"]) < PERSON_DY:
+                    d = abs(cx - c["x"]) + abs(cy - c["y"])
+                    if best is None or d < best[0]:
+                        best = (d, c)
+            if best is None:
+                clusters.append({"x": cx, "y": cy, "pts": [(i, cx, cy, size)]})
+                continue
+            c = best[1]
+            c["pts"].append((i, cx, cy, size))
+            k = len(c["pts"])
+            c["x"] += (cx - c["x"]) / k  # центр группы — среднее, чтобы группа не «уползала»
+            c["y"] += (cy - c["y"]) / k
     people = []
-    for g in groups:
-        if len(g) < 0.25 * len(frames):  # мелькнул — не участник
+    for c in clusters:
+        arr = np.array(c["pts"])
+        samples = len(set(arr[:, 0].astype(int)))
+        if n == 0 or samples < 0.25 * n:  # мелькнул — не участник
             continue
-        arr = np.array(g)
-        people.append({"x": float(np.median(arr[:, 0])), "y": float(np.median(arr[:, 1])),
-                       "size": float(np.median(arr[:, 2]))})
+        if len(arr) > 1.2 * samples:  # по нескольку лиц одновременно — это колонка картинок, а не человек
+            continue
+        size = float(np.median(arr[:, 3]))
+        if arr[:, 1].std() > 0.05 or arr[:, 2].std() > 0.06 or arr[:, 3].std() > 0.35 * size:
+            continue  # скачет или меняет размер — разные лица на одном месте (превью, нарезка)
+        # Живое лицо между кадрами всегда чуть сдвигается (дыхание, камера, дрожание детектора) —
+        # неподвижным оно бывает в 1–25% кадров. Картинка, аватарка, превью стоят пиксель в пиксель
+        steps = np.abs(np.diff(arr[:, 1])) + np.abs(np.diff(arr[:, 2]))
+        if len(steps) and float(np.mean(steps < 0.0005)) > 0.33:
+            continue
+        people.append({"x": float(np.median(arr[:, 1])), "y": float(np.median(arr[:, 2])), "size": size})
     return sorted(people, key=lambda p: p["x"])
 
 
@@ -199,11 +229,11 @@ def speaker_path(frames: list, words: list[dict], meta: dict, crop_frac: float) 
     n = len(frames)
     motion = np.full((len(people), n), np.nan)
     for i, fr in enumerate(frames):
-        for cx, _, _, _, m in fr:
+        for cx, cy, _, _, m in fr:
             if m < 0:
                 continue
-            j = int(np.argmin([abs(cx - p["x"]) for p in people]))
-            if abs(cx - people[j]["x"]) < 0.06:
+            j = int(np.argmin([abs(cx - p["x"]) + abs(cy - p["y"]) for p in people]))
+            if abs(cx - people[j]["x"]) < PERSON_DX and abs(cy - people[j]["y"]) < PERSON_DY:
                 motion[j, i] = m
     # У каждого свой «фон»: мелкое лицо, шум, привычка двигать губами — сравниваем с собственной медианой
     for j in range(len(people)):

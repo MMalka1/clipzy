@@ -339,6 +339,15 @@ export default function Editor() {
     setTranslated({});
     setSelected(hl.length ? hl[0].id : "all");
     if (j.peaks?.length) setPeaks(j.peaks);
+    // В кадре двое — сразу «экран пополам» (субтитры на стыке); один — обычный кадр. Переключается в «Кадре»
+    const pair = (j.speakers?.length ?? 0) >= 2;
+    setS((prev) =>
+      pair
+        ? { ...prev, layout: "split", captionY: prev.aspect === "16:9" ? 84 : 50 }
+        : prev.layout === "split"
+          ? { ...prev, layout: "single", captionY: prev.aspect === "16:9" ? 84 : prev.aspect === "1:1" ? 78 : 68 }
+          : prev,
+    );
     setStage("editor");
   }
 
