@@ -4,6 +4,7 @@ import { ArrowRight, Check, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { useLocale } from "@/i18n/client";
 import landing from "@/i18n/dict/landing";
+import { track } from "@/lib/analytics";
 
 export default function WaitlistForm({ tone = "dark" }: { tone?: "dark" | "accent" }) {
   const t = landing[useLocale()].waitlist;
@@ -25,6 +26,7 @@ export default function WaitlistForm({ tone = "dark" }: { tone?: "dark" | "accen
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t.failed);
       setState("ok");
+      if (!data.already) track("waitlist");
       setMessage(data.already ? t.already : t.added);
       setEmail("");
     } catch (err) {

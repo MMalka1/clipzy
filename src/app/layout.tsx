@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Caveat, JetBrains_Mono, Onest, Unbounded } from "next/font/google";
 import "./globals.css";
+import Attribution from "@/components/Attribution";
+import YandexMetrica from "@/components/YandexMetrica";
 import { LocaleProvider } from "@/i18n/client";
 import { getLocale } from "@/i18n/server";
+import { YM_ID } from "@/lib/analytics";
 
 const onest = Onest({
   variable: "--font-onest",
@@ -68,7 +71,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang={locale} className={`${onest.variable} ${jetbrains.variable} ${unbounded.variable} ${caveat.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
-        <LocaleProvider locale={locale}>{children}</LocaleProvider>
+        <LocaleProvider locale={locale}>
+          {children}
+          {/* Откуда пришёл посетитель (метки рекламы, промокод) и Яндекс Метрика — если задан NEXT_PUBLIC_YM_ID */}
+          <Attribution />
+          {YM_ID > 0 && <YandexMetrica id={YM_ID} />}
+        </LocaleProvider>
       </body>
     </html>
   );

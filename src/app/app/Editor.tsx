@@ -66,6 +66,7 @@ import {
   makeCover,
   zoomAt,
 } from "@/lib/engine";
+import { track as trackGoal } from "@/lib/analytics"; // «track» в редакторе — слежение за лицом
 import { extractPeaks } from "@/lib/peaks";
 import { type ClipSfx3, type SfxCtx, clipSfx3, cueGaps } from "@/lib/sfx";
 import Inspector, { DEFAULT_SETTINGS, type Settings } from "./Inspector";
@@ -288,6 +289,7 @@ export default function Editor() {
     extractPeaks(file).then((p) => p && setPeaks(p));
     try {
       const { id } = await uploadVideo(file, setUploadP);
+      trackGoal("upload");
       setStage("processing");
       pollJob(id);
     } catch (e) {
@@ -318,6 +320,7 @@ export default function Editor() {
     setStage("processing");
     try {
       const { id } = await createJobFromUrl(url, linkRights);
+      trackGoal("upload");
       pollJob(id, true);
     } catch (err) {
       setStage("upload");
@@ -389,6 +392,7 @@ export default function Editor() {
           return;
         }
         if (j.status === "ready") {
+          trackGoal("processed");
           if (fromEngine) setVideoUrl(sourceUrl(j.id));
           openReady(j);
           return;
@@ -890,6 +894,7 @@ export default function Editor() {
           const r = await getRender(id);
           fails = 0;
           setRender(r);
+          if (r.status === "done") trackGoal("export");
           if (r.status === "queued" || r.status === "rendering") setTimeout(poll, 700);
         } catch (e) {
           if ((e instanceof EngineError && e.status === 404) || ++fails > 60) {
@@ -1606,6 +1611,7 @@ function ExportDialog({
             <a
               href={renderFileUrl(render.id)}
               download
+              onClick={() => trackGoal("download")}
               className="mt-5 flex h-11 items-center justify-center gap-2 rounded-lg bg-signal font-semibold text-ink transition-opacity hover:opacity-90"
             >
               <Download className="h-4 w-4" aria-hidden="true" /> {t.downloadMp4(render.duration?.toFixed(0) ?? "")}

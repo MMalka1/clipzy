@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CircleUser, Crown, Film, LogOut } from "lucide-react";
+import { ChartColumn, CircleUser, Crown, Film, LogOut } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { effectivePlan } from "@/lib/plan";
 import { useLocale } from "@/i18n/client";
 import auth from "@/i18n/dict/auth";
+import growth from "@/i18n/dict/growth";
 import { UserAvatar } from "./Avatar";
 import PlanBadge from "./PlanBadge";
 
 /** «Войти» для гостей и незалогиненных, имя и меню — для зарегистрированных. */
 export default function UserMenu({ compact = false }: { compact?: boolean }) {
   const { data, isPending } = authClient.useSession();
-  const t = auth[useLocale()].menu;
+  const locale = useLocale();
+  const t = auth[locale].menu;
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
@@ -27,7 +30,7 @@ export default function UserMenu({ compact = false }: { compact?: boolean }) {
 
   if (isPending) return <span className="h-8 w-16" aria-hidden="true" />;
   const user = data?.user as
-    | { name: string; email: string; image?: string | null; isAnonymous?: boolean | null; plan?: string }
+    | { name: string; email: string; image?: string | null; isAnonymous?: boolean | null; plan?: string; planUntil?: string | null }
     | undefined;
 
   if (!user || user.isAnonymous) {
@@ -65,7 +68,7 @@ export default function UserMenu({ compact = false }: { compact?: boolean }) {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{user.name}</p>
               {!user.email.endsWith(".invalid") && <p className="truncate text-xs text-faint">{user.email}</p>}
-              <PlanBadge plan={user.plan} className="mt-1.5 inline-flex" />
+              <PlanBadge plan={effectivePlan(user)} className="mt-1.5 inline-flex" />
             </div>
           </div>
           <div className="h-px bg-line" />
@@ -75,6 +78,12 @@ export default function UserMenu({ compact = false }: { compact?: boolean }) {
           <Link href="/app" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-raised">
             <Film className="h-4 w-4 text-faint" /> {t.projects}
           </Link>
+          {/* Статистика рекламы и промокоды — только создателю (страница сама проверяет права) */}
+          {user.plan === "creator" && (
+            <Link href="/admin" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-raised">
+              <ChartColumn className="h-4 w-4 text-faint" /> {growth[locale].menu.admin}
+            </Link>
+          )}
           <button
             onClick={async () => {
               await authClient.signOut();

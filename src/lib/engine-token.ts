@@ -12,13 +12,16 @@ function secret() {
 /**
  * Короткоживущий токен для движка: кто пользователь, гость ли он и какой тариф.
  * Формат: base64url(JSON).base64url(HMAC-SHA256) — движок проверяет тем же ENGINE_SECRET.
+ * planUntil — срок пробного плана: токен живёт не дольше, чтобы Pro не пережил свой срок на 6 часов.
  */
-export function signEngineToken(user: { id: string; isAnonymous?: boolean | null; plan?: string | null }) {
+export function signEngineToken(user: { id: string; isAnonymous?: boolean | null; plan?: string | null }, planUntil?: Date | null) {
+  const max = Math.floor(Date.now() / 1000) + 60 * 60 * 6;
+  const cap = planUntil ? Math.floor(planUntil.getTime() / 1000) : NaN;
   const payload = {
     uid: user.id,
     anon: Boolean(user.isAnonymous),
     plan: user.plan || "free",
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 6,
+    exp: Number.isFinite(cap) ? Math.min(max, cap) : max,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = createHmac("sha256", secret()).update(body).digest("base64url");

@@ -11,6 +11,7 @@ import PlanBadge from "@/components/PlanBadge";
 import { useLocale } from "@/i18n/client";
 import profile from "@/i18n/dict/profile";
 import { authClient } from "@/lib/auth-client";
+import { effectivePlan } from "@/lib/plan";
 
 type SessionUser = {
   name: string;
@@ -19,7 +20,10 @@ type SessionUser = {
   image?: string | null;
   isAnonymous?: boolean | null;
   plan?: string;
+  planUntil?: string | null;
 };
+
+const planTitle = (plan: string) => plan[0].toUpperCase() + plan.slice(1);
 
 /** Профиль: аватарка-наклейка (сохраняется сразу), имя, почта, план, язык, выход. */
 export default function ProfileView() {
@@ -66,7 +70,8 @@ export default function ProfileView() {
 }
 
 function SignedIn({ user, onChanged, onLogOut }: { user: SessionUser; onChanged: () => void; onLogOut: () => void }) {
-  const t = profile[useLocale()];
+  const locale = useLocale();
+  const t = profile[locale];
   const parsed = parseUserImage(user.image);
   // Фото из Google/Telegram запоминаем, чтобы к нему можно было вернуться
   const [photo] = useState(parsed && "url" in parsed ? parsed.url : null);
@@ -74,6 +79,40 @@ function SignedIn({ user, onChanged, onLogOut }: { user: SessionUser; onChanged:
   const [status, setStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [name, setName] = useState(user.name ?? "");
   const [nameStatus, setNameStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [promo, setPromo] = useState("");
+  const [promoStatus, setPromoStatus] = useState<"" | "saving" | "done" | "error">("");
+  const [promoText, setPromoText] = useState("");
+
+  // Пробный Pro после срока показываем как Free (сервер поправит базу при следующем заходе в редактор)
+  const plan = effectivePlan(user);
+  const dateFmt = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-US", { day: "numeric", month: "long" });
+  const until = plan !== "free" && user.planUntil ? dateFmt.format(new Date(user.planUntil)) : null;
+
+  async function applyPromo(e: React.FormEvent) {
+    e.preventDefault();
+    const code = promo.trim();
+    if (!code) return;
+    setPromoStatus("saving");
+    setPromoText("");
+    try {
+      const res = await fetch("/api/promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t.promoFailed);
+      setPromoStatus("done");
+      setPromoText(t.promoDone(planTitle(data.plan), dateFmt.format(new Date(data.until))));
+      setPromo("");
+      onChanged();
+      // Движок верит плану из токена — берём новый, чтобы в редакторе Pro заработал без перезагрузки
+      import("@/lib/engine").then((m) => m.engineSession(true)).catch(() => {});
+    } catch (err) {
+      setPromoStatus("error");
+      setPromoText(err instanceof Error ? err.message : t.promoFailed);
+    }
+  }
 
   async function saveImage(image: string | null) {
     setPicked(image);
@@ -115,7 +154,7 @@ function SignedIn({ user, onChanged, onLogOut }: { user: SessionUser; onChanged:
         </div>
         <h1 className="mt-8 truncate text-center text-2xl font-extrabold tracking-[-0.03em]">{user.name}</h1>
         <div className="mt-2 flex justify-center">
-          <PlanBadge plan={user.plan} />
+          <PlanBadge plan={plan} />
         </div>
         <div className="mt-8 flex flex-col gap-2">
           <Link
@@ -246,8 +285,9 @@ function SignedIn({ user, onChanged, onLogOut }: { user: SessionUser; onChanged:
             )}
             <div className="flex items-center justify-between gap-2">
               <dt className="text-dim">{t.plan}</dt>
-              <dd>
-                <PlanBadge plan={user.plan} />
+              <dd className="flex items-center gap-2">
+                {until && <span className="text-sm text-dim">{t.planUntil(until)}</span>}
+                <PlanBadge plan={plan} />
               </dd>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -257,6 +297,41 @@ function SignedIn({ user, onChanged, onLogOut }: { user: SessionUser; onChanged:
               </dd>
             </div>
           </dl>
+
+          {/* Промокод на пробный Pro — пока план Free */}
+          {(plan === "free" || promoStatus === "done") && (
+            <form onSubmit={applyPromo} className="mt-5 border-t border-line pt-5">
+              <label htmlFor="profile-promo" className="text-sm text-dim">
+                {t.promo}
+              </label>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  id="profile-promo"
+                  value={promo}
+                  maxLength={32}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setPromo(e.target.value.toUpperCase());
+                    setPromoStatus("");
+                  }}
+                  placeholder={t.promoPlaceholder}
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-line-strong bg-ink px-3.5 font-mono text-[15px] uppercase outline-none placeholder:normal-case focus:border-dim"
+                />
+                <button
+                  disabled={!promo.trim() || promoStatus === "saving"}
+                  className="h-11 shrink-0 cursor-pointer rounded-lg bg-fg px-4 text-sm font-semibold text-ink disabled:cursor-default disabled:opacity-40"
+                >
+                  {promoStatus === "saving" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : t.promoApply}
+                </button>
+              </div>
+              <p className="mt-1.5 min-h-5 text-sm" role="status">
+                {promoStatus === "done" && <span className="text-dim">{promoText}</span>}
+                {promoStatus === "error" && <span className="text-rec">{promoText}</span>}
+              </p>
+            </form>
+          )}
         </section>
       </div>
     </div>
