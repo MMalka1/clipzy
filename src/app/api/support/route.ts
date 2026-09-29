@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import supportDict from "@/i18n/dict/support";
 import { getLocale } from "@/i18n/server";
 import { auth, authReady } from "@/lib/auth";
-import { createTicket } from "@/lib/db";
+import { clientIp, createTicket } from "@/lib/db";
 import { sendMail } from "@/lib/mail";
 import { SUPPORT } from "@/lib/support";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   if (message.length < 10 || message.length > 5000) return Response.json({ error: t.badMessage }, { status: 400 });
 
   const h = await headers();
-  const ip = (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
+  const ip = clientIp(h);
   let userId: string | null = null;
   try {
     await authReady();

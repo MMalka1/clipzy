@@ -164,3 +164,38 @@ export async function setTicketStatus(id: number, status: "open" | "closed") {
   if (pg) await pg.query("update support_tickets set status = $1 where id = $2", [status, id]);
   else localDb().prepare("update support_tickets set status = ? where id = ?").run(status, id);
 }
+
+/*
+ * Ограничение частоты запросов для своих API (запись в лист ожидания, пробуждение движка).
+ * Счётчик в базе, а не в памяти: на Vercel у каждого экземпляра функции своя память.
+ * Окно фиксированное: в пределах окна считаем запросы, в новом — начинаем с единицы.
+ */
+const HITS_PG = "create table if not exists rate_hits (key text primary key, win bigint not null, n integer not null)";
+const HITS_SQLITE = "create table if not exists rate_hits (key text primary key, win integer not null, n integer not null)";
+const UPSERT_HIT = `insert into rate_hits (key, win, n) values (%1, %2, 1)
+  on conflict (key) do update set n = case when rate_hits.win = excluded.win then rate_hits.n + 1 else 1 end, win = excluded.win
+  returning n`;
+
+/** true — можно; false — лимит на это окно исчерпан. При сбое базы пропускаем: лимит не должен ронять сайт. */
+export async function hit(key: string, max: number, windowSec: number): Promise<boolean> {
+  const win = Math.floor(Date.now() / 1000 / windowSec);
+  try {
+    if (pg) {
+      await pg.query(HITS_PG);
+      const r = await pg.query(UPSERT_HIT.replace("%1", "$1").replace("%2", "$2"), [key, win]);
+      return Number(r.rows[0].n) <= max;
+    }
+    const db = localDb();
+    db.exec(HITS_SQLITE);
+    const r = db.prepare(UPSERT_HIT.replace("%1", "?").replace("%2", "?")).get(key, win) as { n: number };
+    return r.n <= max;
+  } catch (e) {
+    console.error("[rate] счётчик недоступен:", e instanceof Error ? e.message : e);
+    return true;
+  }
+}
+
+/** IP посетителя. На Vercel x-forwarded-for перезаписывается платформой и содержит один настоящий адрес. */
+export function clientIp(h: Headers) {
+  return (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || h.get("x-real-ip") || "local";
+}

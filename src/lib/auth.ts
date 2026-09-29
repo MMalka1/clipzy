@@ -69,7 +69,25 @@ const options = {
   account: {
     accountLinking: { enabled: true, trustedProviders: ["google"] },
   },
-  rateLimit: { enabled: true, window: 60, max: 30 },
+  // Счётчики — в базе: на Vercel у каждого экземпляра функции своя память, и лимит в памяти не работает
+  rateLimit: {
+    enabled: true,
+    storage: "database",
+    window: 60,
+    max: 60,
+    customRules: {
+      "/get-session": false, // зовётся на каждой странице — не тратим на неё запись в базу
+      "/sign-in/anonymous": { window: 3600, max: 10 }, // гостей с одного адреса — не больше 10 в час
+      "/sign-up/email": { window: 3600, max: 10 },
+      "/sign-in/email": { window: 60, max: 10 }, // подбор пароля
+      "/request-password-reset": { window: 3600, max: 5 },
+      "/send-verification-email": { window: 3600, max: 5 },
+    },
+  },
+  advanced: {
+    // Vercel кладёт настоящий адрес посетителя в x-forwarded-for (подменить его снаружи нельзя)
+    ipAddress: { ipAddressHeaders: ["x-forwarded-for", "x-real-ip"] },
+  },
   plugins: [
     anonymous({
       emailDomainName: "guest.clipzy.invalid",
