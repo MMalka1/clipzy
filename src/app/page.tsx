@@ -23,7 +23,7 @@ import { getLocale } from "@/i18n/server";
 import { cssVars } from "@/lib/cssVars";
 import { SUPPORT } from "@/lib/support";
 
-const H2 = "text-[34px] font-extrabold tracking-[-0.03em] sm:text-[44px]";
+const H2 = "text-[30px] font-extrabold leading-[1.08] tracking-[-0.03em] sm:text-[44px]";
 const CTA = "cta relative inline-flex h-12 items-center gap-2 rounded-full bg-fg px-6 font-semibold text-ink transition-transform hover:-rotate-1";
 
 /**
@@ -92,7 +92,7 @@ export default async function Home() {
 
       <main id="main">
         {/* Первый экран: заголовок играет как субтитр, рилсы налепляются на бумагу */}
-        <section className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-14 px-5 pb-16 pt-10 md:grid-cols-[1.15fr_1fr] md:pt-16">
+        <section className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-8 px-5 pb-8 pt-6 md:grid-cols-[1.15fr_1fr] md:gap-14 md:pb-16 md:pt-16">
           <div>
             <Note className="inline-flex -rotate-2 items-center gap-2 text-rec">
               <span aria-hidden="true" className="rec-dot inline-block h-2.5 w-2.5 rounded-full bg-rec" />
@@ -116,8 +116,8 @@ export default async function Home() {
                 {t.hero.aside}
               </Note>
             </div>
-            <p className="mt-4 max-w-lg text-[18px] leading-relaxed text-dim">{t.hero.lead}</p>
-            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <p className="mt-4 max-w-lg text-[16px] leading-relaxed text-dim sm:text-[18px]">{t.hero.lead}</p>
+            <div className="mt-6 flex sm:mt-8 flex-wrap items-center gap-x-6 gap-y-3">
               <Link href="/app" className={CTA}>
                 {t.hero.cta}
                 <CtaIcon />
@@ -130,7 +130,7 @@ export default async function Home() {
                 <ArrowDown className="h-4 w-4" aria-hidden="true" />
               </a>
             </div>
-            <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[14px] text-dim">
+            <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-dim sm:mt-5 sm:gap-y-2 sm:text-[14px]">
               {t.hero.trust.map((x) => (
                 <li key={x} className="inline-flex items-center gap-1.5">
                   <HandCheck className="h-4 w-4 shrink-0 text-rec" />
@@ -140,7 +140,7 @@ export default async function Home() {
             </ul>
           </div>
 
-          <div className="hero-reels relative mx-auto h-[500px] w-full max-w-[400px] sm:h-[548px]">
+          <div className="hero-reels relative mx-auto h-[440px] w-full max-w-[330px] sm:h-[548px] sm:max-w-[400px]">
             <div className="reel-slot drop-in absolute left-0 top-6 w-[58%] -rotate-[5deg]" style={cssVars({ "--drop": "120ms" })}>
               <span className="tape -top-3 left-8 -rotate-6" aria-hidden="true" />
               <DemoReel {...reel(1)} label={t.hero.reel1Label} slate={t.hero.slate1} />
@@ -162,7 +162,7 @@ export default async function Home() {
         <TapeMarquee a={t.tape.a} b={t.tape.b} />
 
         {/* Ролик «как это работает» и «а руками было бы так» */}
-        <section className="mx-auto max-w-5xl px-5 pb-24">
+        <section className="mx-auto max-w-5xl px-5 pb-12 md:pb-24">
           <div className="grid grid-cols-1 items-center gap-10 md:grid-cols-[minmax(0,1fr)_270px] md:gap-0">
             <figure data-reveal="settle" className="relative mx-auto w-full max-w-3xl rotate-[-0.8deg]">
               <div className="photo relative">
@@ -180,7 +180,7 @@ export default async function Home() {
             <aside
               data-reveal="slap"
               style={cssVars({ "--d": "250ms" })}
-              className="relative z-10 mx-auto w-full max-w-[300px] rotate-[2deg] bg-panel px-6 pb-6 pt-7 shadow-[0_20px_40px_-26px_rgba(60,40,10,.55)] md:-ml-8 md:mt-24"
+              className="relative z-10 mx-auto hidden w-full max-w-[300px] rotate-[2deg] bg-panel px-6 pb-6 pt-7 shadow-[0_20px_40px_-26px_rgba(60,40,10,.55)] md:-ml-8 md:mt-24 md:block"
             >
               <span className="tape -top-3 left-1/2 -translate-x-1/2 -rotate-3" aria-hidden="true" />
               <Note className="text-[24px] text-dim">{t.manual.title}</Note>
@@ -202,18 +202,18 @@ export default async function Home() {
 
         {/* Было → стало: рамка едет за настоящим роликом */}
         <section id="example" className="scroll-mt-20 border-y-2 border-dashed border-line-strong">
-          <div className="mx-auto max-w-5xl px-5 py-20">
+          <div className="mx-auto max-w-5xl px-5 py-12 md:py-20">
             <h2 data-reveal="up" className={H2}>
               <Marked text={t.example.title} mark={t.example.mark} />
             </h2>
-            <p className="mt-3 max-w-xl text-[17px] text-dim">{t.example.lead}</p>
+            <p className="mt-3 max-w-xl text-[15px] text-dim sm:text-[17px]">{t.example.lead}</p>
             <ExampleCut reel={reel(2)} t={t.example} />
-            <p className="mx-auto mt-8 max-w-3xl text-sm text-faint">{t.example.footnote}</p>
+            <p className="mx-auto mt-6 max-w-3xl text-xs text-faint sm:mt-8 sm:text-sm">{t.example.footnote}</p>
           </div>
         </section>
 
         {/* Что умеет: четыре живых демо и компактный список */}
-        <section id="features" className="scroll-mt-20 mx-auto max-w-5xl px-5 py-24">
+        <section id="features" className="scroll-mt-20 mx-auto max-w-5xl px-5 py-12 md:py-24">
           <h2 data-reveal="up" className={H2}>
             <Marked text={t.features.title} mark={t.features.mark} />
           </h2>
@@ -222,24 +222,24 @@ export default async function Home() {
 
         {/* Стили */}
         <section id="styles" className="scroll-mt-20 bg-raised/60">
-          <div className="mx-auto max-w-5xl px-5 py-20">
+          <div className="mx-auto max-w-5xl px-5 py-12 md:py-20">
             <h2 data-reveal="up" className={H2}>
               <Marked text={t.styles.title} mark={t.styles.mark} />
             </h2>
-            <div className="mt-10">
+            <div className="mt-6 md:mt-10">
               <StylePlayground />
             </div>
           </div>
         </section>
 
         {/* Цены: чек со штампом и купон раннего доступа */}
-        <section id="pricing" className="scroll-mt-20 mx-auto max-w-3xl px-5 py-24">
+        <section id="pricing" className="scroll-mt-20 mx-auto max-w-3xl px-5 py-12 md:py-24">
           <h2 data-reveal="up" className={H2}>
             <Marked text={t.pricing.title} mark={t.pricing.mark} />
           </h2>
-          <p className="mt-3 max-w-xl text-[17px] text-dim">{t.pricing.lead}</p>
+          <p className="mt-3 max-w-xl text-[15px] text-dim sm:text-[17px]">{t.pricing.lead}</p>
           <PriceReceipt t={t.pricing} />
-          <div className="mt-14 text-center">
+          <div className="mt-10 text-center md:mt-14">
             <Link href="/app" className={CTA}>
               {t.pricing.cta}
               <CtaIcon />
@@ -248,14 +248,14 @@ export default async function Home() {
           <div
             data-reveal="slap"
             style={cssVars({ "--d": "150ms" })}
-            className="coupon relative mx-auto mt-16 max-w-xl -rotate-[1.2deg] bg-signal px-6 pb-8 pt-9 text-[#17140f] sm:px-10"
+            className="coupon relative mx-auto mt-12 max-w-xl -rotate-[1.2deg] bg-signal px-6 pb-7 pt-8 text-[#17140f] sm:px-10 md:mt-16 md:pb-8 md:pt-9"
           >
             <Scissors aria-hidden="true" className="absolute left-7 top-[-1px] h-5 w-5 bg-signal px-0.5 text-[#17140f]" />
             <LogoIcon className="sticker-peel absolute -right-4 -top-5 h-14 w-14 rotate-[12deg] drop-shadow-[0_6px_8px_rgba(40,25,5,0.35)] sm:-right-6 sm:h-16 sm:w-16" />
-            <Note write style={cssVars({ "--write-delay": "400ms" })} className="text-[32px]">
+            <Note write style={cssVars({ "--write-delay": "400ms" })} className="text-[28px] sm:text-[32px]">
               {t.early.title}
             </Note>
-            <p className="mt-2 text-[18px] leading-relaxed">
+            <p className="mt-2 text-[16px] leading-relaxed sm:text-[18px]">
               {t.early.before}
               <b>{t.early.price}</b>
               {t.early.after}
@@ -268,12 +268,12 @@ export default async function Home() {
 
         {/* Вопросы (раскрываются) и письмо автора рядом */}
         <section id="faq" className="scroll-mt-20 border-t-2 border-dashed border-line-strong">
-          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-x-12 gap-y-12 px-5 py-20 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-x-12 gap-y-10 px-5 py-12 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] md:gap-y-12 md:py-20">
             <div className="md:col-start-2 md:row-start-1">
               <h2 data-reveal="up" className={H2}>
                 <Marked text={t.faq.title} mark={t.faq.mark} />
               </h2>
-              <div className="mt-8 border-t border-line">
+              <div className="mt-6 border-t border-line md:mt-8">
                 {t.faq.items.map(([q, a], i) => (
                   <details
                     key={q}
@@ -283,25 +283,28 @@ export default async function Home() {
                     style={cssVars({ "--d": `${i * 50}ms` })}
                     className="faq-item border-b border-line"
                   >
-                    <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-4 text-[18px] font-bold">
+                    <summary className="flex min-h-13 cursor-pointer list-none items-center justify-between gap-4 py-3 text-[16px] font-bold sm:min-h-14 sm:py-4 sm:text-[18px]">
                       {q}
                       <HandPlus className="faq-plus h-5 w-5 shrink-0 text-rec" />
                     </summary>
-                    <p className="-mt-1 pb-5 pr-9 leading-relaxed text-dim">{a}</p>
+                    <p className="-mt-1 pb-4 pr-9 text-[15px] leading-relaxed text-dim sm:pb-5 sm:text-base">{a}</p>
                   </details>
                 ))}
               </div>
             </div>
             <aside
               data-reveal="settle"
-              className="relative self-start rotate-[0.6deg] rounded-sm bg-panel px-7 pb-8 pt-9 shadow-[0_20px_50px_-30px_rgba(60,40,10,0.5)] md:sticky md:top-24 md:col-start-1 md:row-start-1"
+              className="relative self-start rotate-[0.6deg] rounded-sm bg-panel px-6 pb-7 pt-8 shadow-[0_20px_50px_-30px_rgba(60,40,10,0.5)] md:sticky md:top-24 md:col-start-1 md:row-start-1 md:px-7 md:pb-8 md:pt-9"
             >
               <span className="tape -top-3 left-8 -rotate-3" aria-hidden="true" />
               <span className="tape -top-3 right-8 rotate-6" aria-hidden="true" />
               <Note className="text-[30px]">{t.letter.title}</Note>
               <div className="mt-4 space-y-3 text-[16px] leading-relaxed">
-                {t.letter.paragraphs.map((p) => (
-                  <p key={p}>{p}</p>
+                {t.letter.paragraphs.map((p, i) => (
+                  // на телефоне — только последний абзац: «бета, пишите, я читаю»
+                  <p key={p} className={i < t.letter.paragraphs.length - 1 ? "hidden md:block" : ""}>
+                    {p}
+                  </p>
                 ))}
               </div>
               <Note write style={cssVars({ "--write-delay": "600ms" })} className="mt-5 block text-right text-[26px]">

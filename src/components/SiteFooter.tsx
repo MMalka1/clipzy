@@ -31,8 +31,8 @@ export default async function SiteFooter({ logoLabel }: { logoLabel: string }) {
 
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 px-5 py-10 text-sm sm:grid-cols-2 md:grid-cols-[1.2fr_1fr_1fr_1.2fr]">
-        <div className="flex flex-col items-start gap-4">
+      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-x-6 gap-y-8 px-5 py-8 text-sm md:grid-cols-[1.2fr_1fr_1fr_1.2fr] md:py-10">
+        <div className="col-span-2 flex flex-wrap items-center justify-between gap-4 md:col-span-1 md:flex-col md:flex-nowrap md:items-start md:justify-start">
           <Logo size="sm" label={logoLabel} />
           <LangSwitch />
           <span className="flex items-center gap-2 text-dim">
@@ -53,7 +53,7 @@ export default async function SiteFooter({ logoLabel }: { logoLabel: string }) {
             </ul>
           </nav>
         ))}
-        <div>
+        <div className="col-span-2 md:col-span-1">
           <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-faint">{t.help}</h2>
           <ul className="space-y-2 text-dim">
             <li>

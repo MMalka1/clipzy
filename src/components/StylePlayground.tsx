@@ -82,7 +82,7 @@ export default function StylePlayground() {
       className="grid grid-cols-1 items-start gap-8 md:grid-cols-[280px_1fr] md:gap-12 lg:grid-cols-[300px_1fr] lg:gap-20"
     >
       {/* Живое видео, субтитры поверх — меняются сразу */}
-      <div className="relative mx-auto w-[230px] -rotate-[1.5deg] md:sticky md:top-24 md:w-full">
+      <div className="relative mx-auto w-[190px] -rotate-[1.5deg] sm:w-[230px] md:sticky md:top-24 md:w-full">
         <span className="tape -top-3 left-1/2 -translate-x-1/2 rotate-2" aria-hidden="true" />
         <DemoReel src="/demo/loop.mp4" poster="/demo/loop.jpg" label={t.videoLabel}>
           <div
@@ -146,7 +146,7 @@ export default function StylePlayground() {
           })}
         </div>
 
-        <Note className="mt-10 block text-[26px]">{t.colorNote}</Note>
+        <Note className="mt-6 block text-[26px] md:mt-10">{t.colorNote}</Note>
         <div className="mt-4">
           <ColorSwatches
             label={t.colorAria}
@@ -164,13 +164,13 @@ export default function StylePlayground() {
           {t.surprise}
         </button>
 
-        <div className="mt-10 flex items-start gap-2 text-dim">
+        <div className="mt-10 hidden items-start gap-2 text-dim md:flex">
           <HandArrow kind="curve" className="mt-1 hidden h-8 w-16 -scale-x-100 md:block" />
           <p className="max-w-sm text-[15px] leading-relaxed">{t.hint}</p>
         </div>
         <Link
           href="/app"
-          className="cta relative mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-fg px-6 font-semibold text-ink transition-transform hover:-rotate-1"
+          className="cta relative mt-6 inline-flex h-12 items-center gap-2 rounded-full bg-fg px-6 font-semibold text-ink transition-transform hover:-rotate-1 md:mt-8"
         >
           {t.cta}
           <CtaIcon />

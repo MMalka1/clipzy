@@ -113,6 +113,7 @@ const ru = {
   features: {
     title: "Что он умеет",
     mark: "умеет",
+    swipe: "листайте вбок →",
     demos: {
       karaoke: { title: "Субтитры в такт голосу", text: "Каждое слово загорается ровно тогда, когда его произносят." },
       fillers: {
@@ -362,6 +363,7 @@ const en: typeof ru = {
   features: {
     title: "What it does",
     mark: "does",
+    swipe: "swipe sideways →",
     demos: {
       karaoke: { title: "Captions that keep time", text: "Every word lights up right as it's spoken." },
       fillers: {

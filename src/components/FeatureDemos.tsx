@@ -130,35 +130,40 @@ export default function FeatureDemos({ t, phrase }: { t: T; phrase: string[] }) 
 
   return (
     <>
-      <div className="mt-10 grid grid-cols-1 gap-8 md:grid-cols-2">
+      {/* Телефон: карточки листаются вбок (одна на экран), компьютер — сетка 2×2 */}
+      <p className="mt-2 font-hand text-[18px] text-dim md:hidden" aria-hidden="true">
+        {t.swipe}
+      </p>
+      <div className="-mx-5 mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-6 pt-3 [scrollbar-width:none] md:mx-0 md:mt-10 md:grid md:grid-cols-2 md:gap-8 md:overflow-visible md:px-0 md:pb-0 md:pt-0">
         {cards.map((c, i) => (
           <article
             key={c.key}
             data-reveal="up"
             style={cssVars({ "--d": `${i * 90}ms` })}
-            className="relative rounded-[4px] bg-panel p-4 pb-6 shadow-[0_18px_40px_-26px_rgba(60,40,10,.55)] odd:-rotate-[0.6deg] even:rotate-[0.5deg] sm:p-5"
+            className="relative w-[84%] shrink-0 snap-center rounded-[4px] bg-panel p-4 pb-5 shadow-[0_18px_40px_-26px_rgba(60,40,10,.55)] odd:-rotate-[0.6deg] even:rotate-[0.5deg] sm:w-[60%] sm:p-5 md:w-auto md:pb-6"
           >
             <span className="tape -top-3 left-1/2 -translate-x-1/2 rotate-2" aria-hidden="true" />
             <div className="demo relative aspect-[16/10] overflow-hidden rounded-[10px] bg-[#16130f]" data-loop aria-hidden="true">
               {c.demo}
             </div>
-            <h3 className="mt-4 text-[19px] font-bold">{c.title}</h3>
-            <p className="mt-1 leading-relaxed text-dim">{c.text}</p>
+            <h3 className="mt-4 text-[17px] font-bold sm:text-[19px]">{c.title}</h3>
+            <p className="mt-1 text-[14px] leading-relaxed text-dim sm:text-base">{c.text}</p>
           </article>
         ))}
       </div>
 
-      <ul className="mt-14 grid grid-cols-1 gap-x-10 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-6 grid grid-cols-2 gap-x-4 gap-y-4 sm:gap-x-10 sm:gap-y-7 md:mt-14 lg:grid-cols-3">
         {t.items.map(([title, text], i) => {
           const Icon = ICONS[i % ICONS.length];
           return (
-            <li key={title} data-reveal="up" style={cssVars({ "--d": `${i * 70}ms` })} className="flex gap-4">
+            <li key={title} data-reveal="up" style={cssVars({ "--d": `${i * 70}ms` })} className="flex items-start gap-3 sm:gap-4">
               <span className="blob">
                 <Icon className="h-5 w-5 text-[#17140f]" aria-hidden="true" />
               </span>
               <div>
-                <h3 className="text-[17px] font-bold">{title}</h3>
-                <p className="mt-1 text-[15px] leading-relaxed text-dim">{text}</p>
+                <h3 className="text-[14px] font-bold leading-snug sm:text-[17px]">{title}</h3>
+                {/* описание — с планшета: на телефоне хватает названия */}
+                <p className="mt-1 hidden text-[15px] leading-relaxed text-dim sm:block">{text}</p>
               </div>
             </li>
           );

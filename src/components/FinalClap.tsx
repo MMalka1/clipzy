@@ -7,11 +7,11 @@ type T = (typeof landing)["ru"]["final"];
 /** Финальный призыв — кинохлопушка: при появлении палка захлопывается, карточка вздрагивает. */
 export default function FinalClap({ t }: { t: T }) {
   return (
-    <section id="start" className="px-5 pb-24 pt-10">
+    <section id="start" className="px-5 pb-12 pt-6 md:pb-24 md:pt-10">
       <div data-reveal="up" className="clap relative mx-auto max-w-2xl -rotate-[1deg] [--cta-cut:var(--color-signal)]">
         <div className="clap-stick clap-top" aria-hidden="true" />
         <div className="clap-stick" aria-hidden="true" />
-        <div className="clap-body rounded-b-[16px] bg-[#17140f] px-6 pb-10 pt-7 text-[#f3eee3] shadow-[0_28px_50px_-28px_rgba(40,25,5,.7)] sm:px-12">
+        <div className="clap-body rounded-b-[16px] bg-[#17140f] px-5 pb-8 pt-6 sm:pb-10 sm:pt-7 text-[#f3eee3] shadow-[0_28px_50px_-28px_rgba(40,25,5,.7)] sm:px-12">
           <dl className="grid grid-cols-3 border border-[#f3eee3]/25 font-mono text-[11px] uppercase tracking-wider">
             {t.slate.map(([k, v]) => (
               <div key={k} className="border-r border-[#f3eee3]/25 px-3 py-2 last:border-r-0">

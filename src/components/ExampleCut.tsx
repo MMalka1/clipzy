@@ -48,10 +48,10 @@ export default function ExampleCut({
 
   return (
     <div className="excut" data-live={live || undefined} data-host={live ? host : 0} data-cut={live && cuts > 0 ? cuts % 2 : undefined}>
-      <div className="mt-12 grid grid-cols-1 items-center gap-10 md:grid-cols-[1.35fr_auto_1fr]">
+      <div className="mt-8 grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-center gap-4 md:mt-12 md:grid-cols-[1.35fr_auto_1fr] md:gap-10">
         <figure className="mx-auto w-full max-w-[440px] -rotate-2">
           {/* место под подсказку держим всегда — чтобы ничего не прыгало */}
-          <Note className="mb-2 block -rotate-1 text-center text-[20px] text-rec" style={{ visibility: live ? "visible" : "hidden" }}>
+          <Note className="mb-2 block -rotate-1 text-center text-[16px] text-rec sm:text-[20px]" style={{ visibility: live ? "visible" : "hidden" }}>
             {t.watch}
           </Note>
           <div className="photo relative">
@@ -84,7 +84,7 @@ export default function ExampleCut({
           </figcaption>
         </figure>
 
-        <div data-reveal="up" style={cssVars({ "--d": "200ms" })}>
+        <div data-reveal="up" style={cssVars({ "--d": "200ms" })} className="hidden md:block">
           <HandArrow kind="curve" draw className="mx-auto h-12 w-24 rotate-90 text-fg md:rotate-0" />
         </div>
 
@@ -96,7 +96,7 @@ export default function ExampleCut({
         </figure>
       </div>
 
-      <ul className="excut-checks mx-auto mt-12 grid max-w-3xl grid-cols-1 gap-x-10 gap-y-3 text-[16px] sm:grid-cols-2">
+      <ul className="excut-checks mx-auto mt-8 grid max-w-3xl grid-cols-1 gap-x-10 gap-y-2 text-[14px] sm:grid-cols-2 sm:gap-y-3 sm:text-[16px] md:mt-12">
         {t.checks.map((c, i) => (
           <li key={i} className="flex gap-3" data-on={on(i) || undefined}>
             <HandCheck className="mt-0.5 h-5 w-5 shrink-0 text-fg" />
