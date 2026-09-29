@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   }
   const body = await request.json().catch(() => null);
   try {
-    const r = await redeemPromo(user, body?.code);
+    const r = await redeemPromo(user, body?.code, clientIp(h));
     if (!r.ok) {
       return Response.json({ error: t[r.error] ?? t.failed, code: r.error }, { status: r.error === "already" || r.error === "plan" ? 409 : 400 });
     }

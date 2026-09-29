@@ -1,13 +1,13 @@
 import "server-only";
 import { normalizeCode } from "./attribution";
-import { type PromoCode, claimPromoCode, getPromoCode, recordEvent, releasePromoCode, setTrialPlan } from "./db";
+import { type PromoCode, claimPromoCode, getPromoCode, hit, recordEvent, releasePromoCode, setTrialPlan } from "./db";
 import { type PlanUser, effectivePlan } from "./plan";
 
 /**
  * Промокоды на пробный Pro. Активировать можно на свой аккаунт (не гостевой), если сейчас Free,
  * и только один промокод за всю жизнь аккаунта.
  */
-export type PromoError = "anon" | "plan" | "already" | "unknown" | "expired" | "used";
+export type PromoError = "anon" | "plan" | "already" | "unknown" | "expired" | "used" | "tooMany";
 export type Redeemed = { ok: true; plan: string; until: Date } | { ok: false; error: PromoError };
 
 /** Что не так с кодом (null — действует). */
@@ -28,6 +28,7 @@ export async function promoInfo(raw: unknown): Promise<{ valid: boolean; days: n
 export async function redeemPromo(
   user: PlanUser & { id: string; isAnonymous?: boolean | null; source?: string | null },
   raw: unknown,
+  ip?: string,
 ): Promise<Redeemed> {
   const code = normalizeCode(raw);
   if (!code) return { ok: false, error: "unknown" };
@@ -35,6 +36,9 @@ export async function redeemPromo(
   if (effectivePlan(user) !== "free") return { ok: false, error: "plan" };
   const bad = problem(await getPromoCode(code));
   if (bad) return { ok: false, error: bad };
+  // Почта при регистрации не подтверждается, поэтому пачку фейковых аккаунтов сдерживаем адресом:
+  // не больше 3 активаций в сутки с одного IP — иначе скрипт выкачал бы все активации кампании
+  if (ip && !(await hit(`promo:redeem:${ip}`, 3, 86400))) return { ok: false, error: "tooMany" };
 
   const claim = await claimPromoCode(code, user.id);
   if (claim === "already") return { ok: false, error: "already" };

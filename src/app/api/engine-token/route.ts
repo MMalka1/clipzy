@@ -20,7 +20,8 @@ export async function GET() {
   if (planExpired(user)) {
     await expireTrial(user.id).catch((e) => console.error("[plan] не удалось вернуть Free:", e instanceof Error ? e.message : e));
   }
-  const until = plan !== "free" && user.planUntil ? new Date(user.planUntil) : null;
+  // Срок режет токен только у пробного плана; у создателя и оплаченных навсегда старый planUntil не мешает
+  const until = plan !== "free" && plan !== "creator" && user.planUntil ? new Date(user.planUntil) : null;
   return Response.json(
     {
       ...signEngineToken({ ...user, plan }, until),

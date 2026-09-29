@@ -48,6 +48,10 @@ EN = {
     "В видео нет речи — переводить нечего": "There's no speech in the video — nothing to translate",
     "Не удалось перевести — проверьте интернет и попробуйте ещё раз":
         "Translation failed — check your internet connection and try again",
+    "Не удалось собрать клип. Попробуйте ещё раз — если не выйдет, напишите в поддержку.":
+        "Couldn't build the clip. Try again — if it still fails, contact support.",
+    "Слишком большой запрос": "Request too large",
+    "Слишком много обложек подряд — подождите пару минут": "Too many covers in a row — wait a couple of minutes",
     "Переводчик сейчас перегружен — попробуйте через минуту":
         "The translator is overloaded right now — try again in a minute",
     "Зарегистрируйтесь — это бесплатно — чтобы скачать клип.": "Sign up — it's free — to download the clip.",

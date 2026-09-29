@@ -5,7 +5,7 @@ import { nextCookies } from "better-auth/next-js";
 import { anonymous } from "better-auth/plugins";
 import { avatarAllowed, parseUserImage } from "@/components/Avatar";
 import { promoFromCookie, sourceFromCookie } from "./attribution";
-import { authDatabase, queueGuestMove, recordEvent } from "./db";
+import { authDatabase, clientIp, queueGuestMove, recordEvent } from "./db";
 import { sendMail } from "./mail";
 import { engineInternal } from "./engine-token";
 import { redeemPromo } from "./promo";
@@ -66,7 +66,8 @@ const options = {
             await recordEvent(u.isAnonymous ? "guest" : "signup", u.id, u.source ?? null);
             const code = u.isAnonymous ? null : promoFromCookie(ctx?.getHeader("cookie"));
             if (code) {
-              const r = await redeemPromo({ ...u, planUntil: null }, code);
+              const ip = clientIp(new Headers({ "x-forwarded-for": ctx?.getHeader("x-forwarded-for") ?? "", "x-real-ip": ctx?.getHeader("x-real-ip") ?? "" }));
+              const r = await redeemPromo({ ...u, planUntil: null }, code, ip);
               if (!r.ok) console.info(`[auth] промокод ${code} при регистрации не включён: ${r.error}`);
             }
           } catch (e) {

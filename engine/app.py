@@ -22,6 +22,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
@@ -73,9 +74,18 @@ def upload_too_big_text() -> str:
     return f"Файл больше {MAX_UPLOAD_GB:g} ГБ"
 
 
+MUSIC_MAX = 100 * 1024**2
+BODY_MAX = 2 * 1024**2  # обычные запросы (рендер, перевод, обложка) — JSON в пару килобайт
+
+
+class BodyTooBig(Exception):
+    pass
+
+
 class Guard:
-    """Считает запросы в работе. Загрузку без действующего токена или слишком большую отклоняем
-    до чтения тела: иначе FastAPI сперва сохранит весь файл на диск и только потом проверит вход."""
+    """Считает запросы в работе и ограничивает размер тела ДО того, как FastAPI его прочитает:
+    иначе он сперва сохранит весь файл на диск (или JSON в память) и только потом проверит вход.
+    Размер считаем по байтам, а не только по Content-Length — его может и не быть (chunked)."""
 
     def __init__(self, inner):
         self.inner = inner
@@ -84,20 +94,50 @@ class Guard:
         global inflight
         if scope["type"] != "http" or scope["path"] == "/health":
             return await self.inner(scope, receive, send)
-        if scope["method"] == "POST" and scope["path"] in ("/jobs", "/music"):
-            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        upload = scope["method"] == "POST" and scope["path"] in ("/jobs", "/music")
+        limit = (MUSIC_MAX if scope["path"] == "/music" else MAX_UPLOAD) + 1024**2 if upload else BODY_MAX
+        problem = None
+        if upload:
             auth = headers.get("authorization", "")
-            problem = None
             if decode_token(auth[7:] if auth.lower().startswith("bearer ") else "") is None:
                 problem = (401, "Сессия истекла — обновите страницу")
-            elif int(headers.get("content-length") or 0) > MAX_UPLOAD + 1024**2:
-                problem = (413, upload_too_big_text())
-            if problem:
-                resp = JSONResponse({"detail": i18n.tr(problem[1], i18n.lang_of(headers))}, status_code=problem[0])
-                return await resp(scope, receive, send)
+        try:
+            declared = int(headers.get("content-length") or 0)
+        except ValueError:
+            declared = limit + 1
+        if not problem and declared > limit:
+            problem = (413, upload_too_big_text() if upload else "Слишком большой запрос")
+        if problem:
+            resp = JSONResponse({"detail": i18n.tr(problem[1], i18n.lang_of(headers))}, status_code=problem[0])
+            return await resp(scope, receive, send)
+
+        got = 0
+        started = False
+
+        async def counted():
+            nonlocal got
+            msg = await receive()
+            if msg["type"] == "http.request":
+                got += len(msg.get("body", b""))
+                if got > limit:
+                    raise BodyTooBig()
+            return msg
+
+        async def tracked(msg):
+            nonlocal started
+            if msg["type"] == "http.response.start":
+                started = True
+            await send(msg)
+
         inflight += 1
         try:
-            await self.inner(scope, receive, send)
+            await self.inner(scope, counted, tracked)
+        except BodyTooBig:
+            if not started:
+                text = upload_too_big_text() if upload else "Слишком большой запрос"
+                resp = JSONResponse({"detail": i18n.tr(text, i18n.lang_of(headers))}, status_code=413)
+                await resp(scope, receive, send)
         finally:
             inflight -= 1
 
@@ -341,6 +381,35 @@ def refund_usage(key: str, t: float):
             _save_usage()
 
 
+def client_ip(request: Request) -> str:
+    """Адрес посетителя для гостевых лимитов. Левые элементы X-Forwarded-For присылает сам клиент (подделать —
+    одна строка), правый дописал прокси Vercel перед движком — ему и верим."""
+    xff = request.headers.get("x-forwarded-for", "")
+    last = xff.split(",")[-1].strip() if xff else ""
+    return last or (request.client.host if request.client else "?")
+
+
+limits_lock = threading.Lock()
+
+
+def reserve(user: dict, ip: str) -> float:
+    """Проверка лимита и запись попытки — одним шагом: иначе десяток одновременных загрузок
+    проскочит проверку до того, как первая запишется. Не получилось — refund_usage."""
+    with limits_lock:
+        check_limits(user, ip)
+        now = time.time()
+        record_usage(user["uid"], now)
+        if user["anon"]:
+            record_usage("ip:" + ip, now)
+        return now
+
+
+def release(user: dict, ip: str, now: float):
+    refund_usage(user["uid"], now)
+    if user["anon"]:
+        refund_usage("ip:" + ip, now)
+
+
 def check_limits(user: dict, ip: str):
     now = time.time()
     day = [t for t in usage.get(user["uid"], []) if now - t < 86400]
@@ -537,8 +606,16 @@ def health():
 
 @app.post("/jobs")
 async def create_job(file: UploadFile, request: Request, language: str | None = None, user: dict = Depends(current_user)):
-    ip = request.client.host if request.client else "?"
-    check_limits(user, ip)
+    ip = client_ip(request)
+    now = reserve(user, ip)
+    try:
+        return await _create_job(file, language, user, ip, now)
+    except BaseException:
+        release(user, ip, now)
+        raise
+
+
+async def _create_job(file: UploadFile, language: str | None, user: dict, ip: str, now: float):
     job_id = uuid.uuid4().hex[:12]
     d = os.path.join(DATA, job_id)
     os.makedirs(d)
@@ -555,7 +632,6 @@ async def create_job(file: UploadFile, request: Request, language: str | None = 
                 shutil.rmtree(d, ignore_errors=True)
                 raise HTTPException(413, upload_too_big_text())
             out.write(chunk)
-    now = time.time()
     if MAX_MINUTES:
         try:
             duration = (await run_in_threadpool(render.probe, src))["duration"]
@@ -568,9 +644,6 @@ async def create_job(file: UploadFile, request: Request, language: str | None = 
                     "stage": "queued", "progress": 0.0, "created": now, "language": language,
                     "owner": user["uid"], "ip": ip if user["anon"] else None}
     save_snapshot(job_id)
-    record_usage(user["uid"], now)
-    if user["anon"]:
-        record_usage("ip:" + ip, now)
     gpu_queue.submit(process_job, job_id)
     return {"id": job_id}
 
@@ -638,6 +711,7 @@ def download_job(job_id: str, url: str):
         "outtmpl": os.path.join(d, "source.%(ext)s"),
         "ffmpeg_location": os.path.dirname(render.tool("ffmpeg")),
         "noplaylist": True,
+        "allowed_extractors": [r"(?i)youtube.*", r"(?i)vk.*", r"(?i)rutube.*"],
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
@@ -680,19 +754,15 @@ def create_job_from_url(req: LinkRequest, request: Request, user: dict = Depends
     url = req.url.strip()
     if len(url) > 500 or not link_host(url):
         raise HTTPException(400, "Нужна ссылка на видео с YouTube, VK Видео или Rutube.")
-    ip = request.client.host if request.client else "?"
-    check_limits(user, ip)
+    ip = client_ip(request)
+    now = reserve(user, ip)
     job_id = uuid.uuid4().hex[:12]
     d = os.path.join(DATA, job_id)
     os.makedirs(d)
-    now = time.time()
     jobs[job_id] = {"id": job_id, "dir": d, "source": "", "name": url, "status": "queued", "stage": "download",
                     "progress": 0.0, "created": now, "language": req.language, "owner": user["uid"],
                     "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None}
     save_snapshot(job_id)
-    record_usage(user["uid"], now)
-    if user["anon"]:
-        record_usage("ip:" + ip, now)
     download_pool.submit(download_job, job_id, url)
     return {"id": job_id}
 
@@ -706,12 +776,6 @@ PUBLIC_JOB = ("id", "name", "status", "stage", "progress", "error", "duration", 
 def list_jobs(user: dict = Depends(current_user)):
     """Недавние готовые проекты пользователя — чтобы открыть без повторной загрузки."""
     with lock:
-        if not user["anon"]:
-            # Проекты, сделанные до появления аккаунтов, забирает первый вошедший пользователь
-            for j in jobs.values():
-                if not j.get("owner"):
-                    j["owner"] = user["uid"]
-                    threading.Thread(target=save_snapshot, args=(j["id"],), daemon=True).start()
         ready = [j for j in jobs.values() if j.get("owner") == user["uid"] and j.get("status") == "ready"
                  and os.path.exists(j.get("source", ""))]
         ready.sort(key=lambda j: j.get("created", 0), reverse=True)
@@ -763,32 +827,33 @@ def get_job(job_id: str, request: Request, user: dict = Depends(current_user)):
     return out
 
 
+# Границы входных данных рендера: без них size=5000 или 100 тысяч слов съели бы память и процессор
 class Word(BaseModel):
-    text: str
+    text: str = Field(max_length=100)
     start: float
     end: float
     filler: bool = False
 
 
 class Phrase(BaseModel):
-    words: list[Word]
+    words: list[Word] = Field(max_length=80)
     emoji: str | None = Field("auto", max_length=16)  # эмодзи из превью; None — без эмодзи, auto — по словам
 
 
 class RenderRequest(BaseModel):
-    start: float
-    end: float
-    phrases: list[Phrase]
-    style: str = "beat"
-    size: float = 24
-    captionY: float = 68
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    phrases: list[Phrase] = Field(max_length=4000)
+    style: str = Field("beat", max_length=32)
+    size: float = Field(24, ge=10, le=60)
+    captionY: float = Field(68, ge=0, le=100)
     accent: str | None = None
     textColor: str | None = None
-    cropX: float = 50
-    faceX: float | None = None
-    faceY: float | None = None
-    frameScale: float = 1.0  # 1 — заполнить 9:16, 0 — весь кадр целиком на размытом фоне
-    hook: str | None = None
+    cropX: float = Field(50, ge=0, le=100)
+    faceX: float | None = Field(None, ge=0, le=1)
+    faceY: float | None = Field(None, ge=0, le=1)
+    frameScale: float = Field(1.0, ge=0, le=1)  # 1 — заполнить 9:16, 0 — весь кадр целиком на размытом фоне
+    hook: str | None = Field(None, max_length=200)
     removePauses: bool = False
     zoom: bool = False
     progressBar: bool = False
@@ -796,12 +861,12 @@ class RenderRequest(BaseModel):
     removeFillers: bool = False
     sfx: str | None = None  # звуковые эффекты: off | clean (аккуратно) | punchy (динамично)
     sfxMeme: bool = False  # мемные звуки: касса, «неверно», блеск… — на эмодзи или в паузе
-    sfxVolume: float = 70  # громкость эффектов 0–100
+    sfxVolume: float = Field(70, ge=0, le=100)  # громкость эффектов 0–100
     sfxWhoosh: bool | None = None  # старые клиенты: три флажка вместо стиля
     sfxDing: bool | None = None
     sfxSmart: bool | None = None
-    music: str | None = None  # lofi | ambient | drive | custom:<id>
-    musicVolume: float = 35
+    music: str | None = Field(None, max_length=40)  # lofi | ambient | drive | custom:<id>
+    musicVolume: float = Field(35, ge=0, le=100)
     watermark: bool = True  # решает сервер по плану: во Free всегда включён
     layout: str = "single"  # single | split — «экран пополам»: двое участников сверху и снизу (в 16:9 — рядом)
     aspect: str = "9:16"  # формат готового видео: 9:16 (Reels/Shorts), 16:9 (YouTube), 1:1 (лента)
@@ -833,7 +898,7 @@ def run_render(rid: str):
         save_render(rid)
     except Exception as e:
         traceback.print_exc()
-        update(renders, rid, status="error", error=str(e))
+        update(renders, rid, status="error", error="Не удалось собрать клип. Попробуйте ещё раз — если не выйдет, напишите в поддержку.")
 
 
 def save_render(rid: str):
@@ -845,15 +910,27 @@ def save_render(rid: str):
     os.replace(path + ".tmp", path)
 
 
-def music_path(music: str | None) -> str | None:
+MUSIC_PER_USER = 10
+
+
+def _music_owner(mid: str) -> str | None:
+    try:
+        with open(os.path.join(MUSIC_DIR, mid + ".owner"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def music_path(music: str | None, uid: str | None = None) -> str | None:
+    """Путь к музыке. Свои треки — только их владельцу (uid)."""
     if not music:
         return None
     if music in audio_fx.TRACKS:
         return audio_fx.asset("music_" + music)
     if music.startswith("custom:"):
         mid = music.split(":", 1)[1]
-        if re.fullmatch(r"[0-9a-f]{12}", mid):
-            found = [f for f in os.listdir(MUSIC_DIR) if f.startswith(mid + ".")]
+        if re.fullmatch(r"[0-9a-f]{12}", mid) and (uid is None or _music_owner(mid) == uid):
+            found = [f for f in os.listdir(MUSIC_DIR) if f.startswith(mid + ".") and not f.endswith(".owner")]
             if found:
                 return os.path.join(MUSIC_DIR, found[0])
     raise ValueError("Музыка не найдена")
@@ -872,24 +949,29 @@ async def upload_music(file: UploadFile, user: dict = Depends(current_user)):
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"):
         raise HTTPException(400, "Нужен аудиофайл: MP3, WAV, M4A, OGG или FLAC")
+    mine = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".owner") and _music_owner(f[:-6]) == user["uid"]]
+    if len(mine) >= MUSIC_PER_USER:
+        raise HTTPException(429, f"Можно загрузить до {MUSIC_PER_USER} своих треков")
     mid = uuid.uuid4().hex[:12]
     path = os.path.join(MUSIC_DIR, mid + ext)
     size = 0
     with open(path, "wb") as out:
         while chunk := await file.read(4 * 1024 * 1024):
             size += len(chunk)
-            if size > 100 * 1024**2:
+            if size > MUSIC_MAX:
                 out.close()
                 os.remove(path)
                 raise HTTPException(413, "Файл больше 100 МБ")
             out.write(chunk)
+    with open(os.path.join(MUSIC_DIR, mid + ".owner"), "w", encoding="utf-8") as f:
+        f.write(user["uid"])
     return {"id": mid, "name": file.filename}
 
 
 @app.get("/music/{mid}")
 def get_music(mid: str, user: dict = Depends(current_user)):
     try:
-        return FileResponse(music_path("custom:" + mid))
+        return FileResponse(music_path("custom:" + mid, user["uid"]))
     except ValueError:
         raise HTTPException(404)
 
@@ -951,7 +1033,7 @@ def create_render(job_id: str, req: RenderRequest, user: dict = Depends(current_
     # Водяной знак — только во Free; платные планы и creator — без него
     req.watermark = user.get("plan", "free") == "free"
     try:
-        music_path(req.music)
+        music_path(req.music, user["uid"])
     except ValueError as e:
         raise HTTPException(400, str(e))
     rid = uuid.uuid4().hex[:12]
@@ -993,10 +1075,20 @@ def create_cover(job_id: str, req: CoverRequest, user: dict = Depends(current_us
     body["t"] = min(max(req.t, 0.0), max(float(job.get("duration") or 0) - 0.05, 0.0))
     body["title"] = req.title[:120]
     body["watermark"] = user.get("plan", "free") == "free"
+    now = time.time()
+    with limits_lock:
+        recent = [t for t in cover_calls.get(user["uid"], []) if now - t < 600]
+        if len(recent) >= 20:
+            raise HTTPException(429, "Слишком много обложек подряд — подождите пару минут")
+        cover_calls[user["uid"]] = recent + [now]
     out = os.path.join(job["dir"], f"cover_{uuid.uuid4().hex[:8]}.jpg")
     render.render_cover(job["source"], job["meta"], body, out, track=job.get("track"),
                         speakers=job.get("speakers") if job.get("people_v") == face_track.PEOPLE_VERSION else None)
-    return FileResponse(out, media_type="image/jpeg", filename="clipzy-cover.jpg")
+    return FileResponse(out, media_type="image/jpeg", filename="clipzy-cover.jpg",
+                        background=BackgroundTask(lambda: os.path.exists(out) and os.remove(out)))
+
+
+cover_calls: dict[str, list[float]] = {}
 
 
 @app.get("/renders/{rid}")

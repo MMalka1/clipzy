@@ -244,7 +244,9 @@ export type FunnelRow = { source: string | null; name: string; n: number };
 /** Сколько каких событий было с момента since — по источникам. */
 export async function funnel(since: Date): Promise<FunnelRow[]> {
   await ensureTables("events", EVENTS);
-  const q = "select source, name, count(*) as n from events where created_at > %1 group by source, name";
+  // Считаем людей, а не нажатия: один человек с десятью экспортами — это один экспорт в воронке
+  const q =
+    "select source, name, count(distinct coalesce(user_id, 'e' || id)) as n from events where created_at > %1 group by source, name";
   const map = (x: Record<string, unknown>): FunnelRow => ({
     source: (x.source as string | null) ?? null,
     name: String(x.name),
