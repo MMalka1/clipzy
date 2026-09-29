@@ -111,15 +111,25 @@ async function sh(sb: Sandbox, script: string) {
   return (await r.stdout()).trim();
 }
 
+// Сон сохраняет весь диск машины — и /tmp тоже, поэтому ничего «живого» в файлах не храним:
+//  • работает ли движок — по блокировке, которую сервер держит всё время работы (блокировки перезагрузку не переживают);
+//    по ней же находим процесс, чтобы остановить;
+//  • счётчик запусков — свой у каждого сеанса машины (boot_id меняется при каждом пробуждении). Иначе после пары снов
+//    старый счётчик выглядел бы как «движок трижды упал», и его перестали бы запускать.
+const LOCK = "/tmp/clipzy-engine.lock";
+const RUN = `B=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo boot); STF=/tmp/clipzy-starts.$B`;
+/** PID процессов, которые держат блокировку движка, — это сам сервер */
+const HOLDERS = `for f in /proc/[0-9]*/fd/*; do [ "$(readlink "$f" 2>/dev/null)" = ${LOCK} ] && { f=\${f#/proc/}; echo "\${f%%/*}"; }; done | sort -u`;
+
 /** Одним вызовом: установлен ли движок, какая версия кода на диске, жив ли и отвечает ли сервер. */
-const STATUS = `R=${ROOT}; mkdir -p $R/engine
+const STATUS = `R=${ROOT}; mkdir -p $R/engine; ${RUN}
 echo "ready=$(cat $R/ready 2>/dev/null)"
 echo "state=$(cat $R/setup.state 2>/dev/null)"
 echo "failed=$(cat $R/failed 2>/dev/null)"
 echo "code=$(cat $R/engine/.version 2>/dev/null)"
 if flock -n /tmp/clipzy-setup.lock true 2>/dev/null; then echo setup=0; else echo setup=1; fi
-P=$(cat /tmp/clipzy-engine.pid 2>/dev/null); if [ -n "$P" ] && kill -0 "$P" 2>/dev/null; then echo alive=1; else echo alive=0; fi
-echo "starts=$(cat /tmp/clipzy-starts 2>/dev/null || echo 0)"
+if flock -n ${LOCK} true 2>/dev/null; then echo alive=0; else echo alive=1; fi
+echo "starts=$(cat $STF 2>/dev/null || echo 0)"
 echo "health=$(curl -s -m 3 http://127.0.0.1:${PORT}/health)"
 echo "log=$(tail -c 700 $R/setup.log 2>/dev/null | tr '\\n' ' ')"
 echo "elog=$(tail -c 700 $R/engine.log 2>/dev/null | tr '\\n' ' ')"`;
@@ -152,16 +162,17 @@ function parseStatus(out: string) {
 
 // Движок стоит за прокси Vercel: адрес посетителя (для лимита гостей) берём из X-Forwarded-For.
 // Сервер держит блокировку всё время работы: второй одновременный запуск тихо выходит.
-// PID и число запусков — в /tmp: после сна машины это новый сеанс, и счёт начинается заново.
-const START = `exec 9>/tmp/clipzy-engine.lock; flock -n 9 || exit 0
-echo $(( $(cat /tmp/clipzy-starts 2>/dev/null || echo 0) + 1 )) >/tmp/clipzy-starts
-echo $$ >/tmp/clipzy-engine.pid
+// Число запусков — своё у каждого сеанса машины (см. RUN); счётчики прошлых сеансов и старые PID-файлы убираем.
+const START = `exec 9>${LOCK}; flock -n 9 || exit 0
+${RUN}
+find /tmp -maxdepth 1 \\( -name 'clipzy-starts*' -o -name 'clipzy-engine*.pid' \\) ! -name "clipzy-starts.$B" -delete 2>/dev/null
+echo $(( $(cat $STF 2>/dev/null || echo 0) + 1 )) >$STF
 cd ${ROOT}/engine && exec ${ROOT}/venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port ${PORT} --no-access-log \
   --timeout-graceful-shutdown 5 --proxy-headers --forwarded-allow-ips "*" >>${ROOT}/engine.log 2>&1`;
-// Останавливаем по PID (pkill -f задел бы и эту же оболочку) и ждём, пока освободится блокировка
-const STOP = `P=$(cat /tmp/clipzy-engine.pid 2>/dev/null); [ -n "$P" ] && kill "$P" 2>/dev/null
-flock -w 10 /tmp/clipzy-engine.lock true 2>/dev/null || { [ -n "$P" ] && kill -9 "$P" 2>/dev/null; flock -w 5 /tmp/clipzy-engine.lock true; }
-echo 0 >/tmp/clipzy-starts`;
+// Останавливаем того, кто держит блокировку (pkill -f задел бы и эту же оболочку), и ждём, пока она освободится
+const STOP = `${RUN}; P=$(${HOLDERS}); [ -n "$P" ] && kill $P 2>/dev/null
+flock -w 10 ${LOCK} true 2>/dev/null || { [ -n "$P" ] && kill -9 $P 2>/dev/null; flock -w 5 ${LOCK} true; }
+echo 0 >$STF`;
 // Установка тоже под блокировкой: два одновременных запроса не запустят её дважды
 const SETUP = (deps: string) => `exec 8>/tmp/clipzy-setup.lock; flock -n 8 || exit 0
 rm -f ${ROOT}/failed; : >${ROOT}/setup.log; exec bash ${ROOT}/engine/sandbox/setup.sh ${deps}`;
@@ -275,7 +286,7 @@ export async function ensureEngine({ retry = false } = {}): Promise<EngineState>
     if (!h?.ok) {
       if (st.alive) return { state: "starting" }; // Python ещё загружается
       if (st.starts >= MAX_STARTS && !retry) return { state: "failed", detail: st.elog.slice(-500) };
-      if (retry) await sh(sb, "echo 0 >/tmp/clipzy-starts");
+      if (retry) await sh(sb, `${RUN}; echo 0 >$STF`);
       await sb.runCommand({ cmd: "bash", args: ["-c", START], env: { ...engineEnv(), CLIPZY_VERSION: b.code }, detached: true });
       return { state: "starting" };
     }

@@ -11,6 +11,8 @@ import html
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -32,12 +34,40 @@ def _official(texts: list[str], src: str, dst: str, key: str) -> list[str]:
     return [html.unescape(t["translatedText"]) for t in out["data"]["translations"]]
 
 
-def _free_one(text: str, src: str, dst: str) -> str:
-    url = ("https://translate.googleapis.com/translate_a/single?client=gtx&dt=t"
-           f"&sl={src}&tl={dst}&q={urllib.parse.quote(text)}")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    data = json.load(urllib.request.urlopen(req, timeout=20))
+class Busy(Exception):
+    """Переводчик отвечает «слишком много запросов» и после повторов."""
+
+
+def _retry(fn, *args):
+    """Бесплатный адрес быстро отвечает 429 (у серверов Vercel общий IP) — ждём и повторяем."""
+    for wait in (1, 3, 6, None):
+        try:
+            return fn(*args)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 and e.code < 500:
+                raise
+            if wait is None:
+                raise Busy() from e
+            time.sleep(wait)
+
+
+def _free(text: str, src: str, dst: str) -> str:
+    # POST: длинный текст не влезает в адрес запроса
+    req = urllib.request.Request(
+        f"https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl={src}&tl={dst}",
+        data=urllib.parse.urlencode({"q": text}).encode(),
+        headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"},
+    )
+    data = json.load(urllib.request.urlopen(req, timeout=30))
     return "".join(part[0] for part in data[0] if part and part[0])
+
+
+def _free_batch(texts: list[str], src: str, dst: str) -> list[str]:
+    """Много строк — одним запросом через перевод строки; если строки «склеились», переводим по одной."""
+    lines = _retry(_free, "\n".join(texts), src, dst).split("\n")
+    if len(lines) == len(texts):
+        return [line.strip() for line in lines]
+    return [_retry(_free, t, src, dst) for t in texts]
 
 
 def translate_texts(texts: list[str], src: str, dst: str) -> list[str]:
@@ -49,8 +79,20 @@ def translate_texts(texts: list[str], src: str, dst: str) -> list[str]:
         for i in range(0, len(texts), 100):  # лимит API — 128 строк за запрос
             out += _official(texts[i : i + 100], src, dst, key)
         return out
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        return list(pool.map(lambda t: _free_one(t, src, dst) if t.strip() else "", texts))
+    # Бесплатный адрес: пачками по ~1500 символов, не больше двух запросов одновременно
+    items = [(i, " ".join(t.split())) for i, t in enumerate(texts) if t.strip()]
+    batches: list[list[tuple[int, str]]] = [[]]
+    for it in items:
+        if batches[-1] and sum(len(t) + 1 for _, t in batches[-1]) + len(it[1]) > 1500:
+            batches.append([])
+        batches[-1].append(it)
+    result = [""] * len(texts)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        done = pool.map(lambda b: _free_batch([t for _, t in b], src, dst), [b for b in batches if b])
+        for b, tr in zip([b for b in batches if b], done):
+            for (i, _), t in zip(b, tr):
+                result[i] = t
+    return result
 
 
 def _chunks(words: list[str], max_words: int = 3, max_chars: int = 18) -> list[list[str]]:

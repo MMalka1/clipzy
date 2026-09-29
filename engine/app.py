@@ -916,6 +916,8 @@ def translate_subtitles(job_id: str, req: TranslateRequest, user: dict = Depends
             raise HTTPException(400, "В видео нет речи — переводить нечего")
         try:
             cache[req.target] = translate.translate_job(words, job.get("highlights") or [], src, req.target)
+        except translate.Busy as e:
+            raise HTTPException(503, "Переводчик сейчас перегружен — попробуйте через минуту") from e
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(502, "Не удалось перевести — проверьте интернет и попробуйте ещё раз") from e

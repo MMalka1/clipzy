@@ -48,6 +48,8 @@ EN = {
     "В видео нет речи — переводить нечего": "There's no speech in the video — nothing to translate",
     "Не удалось перевести — проверьте интернет и попробуйте ещё раз":
         "Translation failed — check your internet connection and try again",
+    "Переводчик сейчас перегружен — попробуйте через минуту":
+        "The translator is overloaded right now — try again in a minute",
     "Зарегистрируйтесь — это бесплатно — чтобы скачать клип.": "Sign up — it's free — to download the clip.",
     "Неверный отрезок": "Invalid clip range",
     "Цвет в формате #RRGGBB": "Use a #RRGGBB color",
