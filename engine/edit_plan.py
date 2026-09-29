@@ -1,16 +1,11 @@
-"""Монтажный ритм: планы, акценты и звуки — по одной логике, как у монтажёра.
+"""Монтажный ритм: планы и акценты — по одной логике, как у монтажёра.
 
   • План = предложение. Планы чередуются: общий (1.0) и крупный (1.12) — классический джамп-кат.
     Внутри плана картинка медленно наезжает, чтобы кадр не был статичным.
-  • Акцент = самое сильное слово предложения (цифры, деньги, «секрет», «ошибка»…).
-    На нём быстрый плавный наезд и «дзынь». Не чаще раза в 5 секунд.
-  • Звуки (версия 2) — по смыслу и по картинке, см. sfx_events():
-      переходы («вжух») — только на настоящих склейках, пик звука ровно на склейке;
-      акценты — у самого сильного момента «нарастание → удар», у остальных «дзынь»;
-      смысловые — касса на деньгах, «неверно» на ошибках, блеск на секретах, скретч на «но»
-      в начале фразы, «поп» на пунктах списка.
-    События хранят момент «попадания» (anchor) в шкале исходника и пик сэмпла — движок и превью
-    ставят начало сэмпла в map_time(anchor) − peak.
+  • Акцент = самое сильное слово предложения (цифры, деньги, «секрет», «ошибка»…). На нём быстрый
+    плавный наезд, который «приземляется» ровно на начало слова. Не чаще раза в 5 секунд.
+  • Метки (cues) — слова, на которые можно поставить мемный звук или «тик» пункта списка.
+    Сами звуки выбирает sfx_logic уже в шкале готового клипа — по тому, что происходит в кадре.
 
 Все времена — в шкале исходного видео. Движок и превью считают зум по одним и тем же числам.
 """
@@ -20,9 +15,8 @@ import re
 
 from audio_fx import _n
 from emoji_map import emoji_for
-from sfx_synth import SOUNDS
 
-PLAN_VERSION = 2  # поменялась логика — старые проекты пересчитывают план
+PLAN_VERSION = 3  # поменялась логика — старые проекты пересчитывают план
 
 SHOT_ZOOM = (1.0, 1.12)
 PUSH = 0.035  # медленный наезд внутри плана
@@ -30,25 +24,46 @@ ACCENT_ZOOM = 0.09
 ACCENT_IN, ACCENT_OUT = 0.18, 0.4
 MIN_SHOT = 1.2  # короткие предложения не дробим на отдельные планы
 ACCENT_GAP = 5.0
-WHOOSH_GAP = 5.0
+HOOK_END = 3.2  # хук на экране первые 3.2 с готового клипа
 
-STRONG = ("секрет", "ошибк", "главн", "никогда", "никто", "деньг", "миллион", "бесплатн", "запомн", "важн",
-          "шок", "правд", "stop", "secret", "never", "money", "free", "mistake")
+STRONG = ("главн", "никогда", "никто", "бесплатн", "запомн", "важн", "шок", "правд", "stop", "never", "free")
+
+# Смысловые метки — целые слова (fullmatch), чтобы «доходит», «Европа» и «провалился» не срабатывали
+MONEY = re.compile(r"деньг\w*|денег|денежн\w*|рубл(ь|я|ей|ям|ями|ях)|доллар\w*|евро|миллион\w*|миллиард\w*|"
+                   r"зарплат\w*|бабк(и|ах|ами)|бабок|бабл\w*|прибыл(ь|и|ью)|доход(а|у|ом|е|ы|ов|ам|ами|ах)?|"
+                   r"выручк\w*|заработ(ать|ал|ала|али|аю|ает|ок|ка|ку)|money|cash|dollars?|millions?|billions?|"
+                   r"salary|profits?|revenue")
+WRONG = re.compile(r"ошибк\w*|ошиба\w*|ошибёш\w*|неправильн\w*|провал(а|ом)?|mistakes?|wrong|fail(ed|ure)?")
+SECRET = re.compile(r"секрет\w*|лайфхак\w*|фишк(а|и|у|ой|е)|хитрост\w*|secrets?|hacks?|tricks?")
+STOP = {"стоп", "стоп-стоп", "подожди", "подождите", "wait", "stop"}
+CTA = re.compile(r"подпиш\w*|подписыва\w*|ссылк\w*|subscribe\w*|links?")
+LIST = {"во-первых", "во-вторых", "в-третьих", "в-четвёртых", "в-четвертых", "первое", "второе", "третье",
+        "firstly", "secondly", "thirdly", "first", "second", "third"}
+# Год («в 2015») и «10-летний», «90-х», «2-й» — не акцент: это не цифра-факт
+YEAR = re.compile(r"(19|20)\d\d")
+NUM_WORD = re.compile(r"\d+-?(летн\w*|лет|х|й|го|м|я)")
 
 
-def accent_score(text: str) -> float:
+def accent_score(text: str) -> tuple[float, str | None]:
+    """Сила слова как акцента и его тип: num | money | secret | wrong | strong."""
     t = _n(text)
     if len(t) < 2:
-        return 0
-    score = 0.0
-    # Цифры — сильный акцент («35 фактов», «1000 рублей»), но год («2015 года») — просто дата
-    if any(ch.isdigit() for ch in t) and not re.fullmatch(r"(19|20)\d\d", t):
+        return 0.0, None
+    score, tag = 0.0, None
+    if MONEY.fullmatch(t) or "$" in text or "₽" in text:
+        score, tag = 2.5, "money"
+    elif WRONG.fullmatch(t):
+        score, tag = 2.5, "wrong"
+    elif SECRET.fullmatch(t):
+        score, tag = 2.5, "secret"
+    elif t.startswith(STRONG):
+        score, tag = 2.5, "strong"
+    if any(ch.isdigit() for ch in t) and not YEAR.fullmatch(t) and not NUM_WORD.fullmatch(t):
         score += 3
-    if t.startswith(STRONG):
-        score += 2.5
+        tag = "money" if tag == "money" else "num"
     if emoji_for(text) in ("💰", "💸", "🤑", "🔥", "🏆", "❌", "🤫", "🚫"):
         score += 1.5
-    return score
+    return score, tag
 
 
 def split_sentences(words: list[dict]) -> list[list[dict]]:
@@ -64,6 +79,35 @@ def split_sentences(words: list[dict]) -> list[list[dict]]:
             cur = []
     if cur:
         out.append(cur)
+    return out
+
+
+def cue_kind(text: str, first: bool) -> str | None:
+    t = _n(text)
+    if not t:
+        return None
+    if MONEY.fullmatch(t) or "$" in text or "₽" in text:
+        return "cash"
+    if WRONG.fullmatch(t):
+        return "fail"
+    if SECRET.fullmatch(t):
+        return "sparkle"
+    if CTA.fullmatch(t):
+        return "bell"
+    if first and t in STOP:
+        return "scratch"
+    if first and t in LIST:
+        return "list"
+    return None
+
+
+def cues(sentences: list[list[dict]]) -> list[dict]:
+    out = []
+    for sent in sentences:
+        for i, w in enumerate(sent):
+            kind = cue_kind(w["text"], i == 0)
+            if kind:
+                out.append({"t": round(w["start"], 3), "end": round(w["end"], 3), "kind": kind, "first": i == 0})
     return out
 
 
@@ -84,131 +128,21 @@ def build_plan(words: list[dict], fillers: list[bool]) -> dict:
         end = groups[k + 1][0]["start"] - 0.1 if k + 1 < len(groups) else g[-1]["end"] + 2.0
         shots.append({"start": round(start, 3), "end": round(max(end, start + 0.3), 3), "zoom": SHOT_ZOOM[k % 2]})
 
-    # Акценты: лучшее слово предложения, если оно действительно сильное
+    # Акценты: лучшее слово предложения, если оно действительно сильное.
+    # Наезд начинается чуть раньше слова и «приземляется» на его начало (ACCENT_IN).
     accents = []
     last = -99.0
     for s in sentences:
-        best = max(s, key=lambda w: accent_score(w["text"]))
-        if accent_score(best["text"]) < 2.5 or best["start"] - last < ACCENT_GAP or best["start"] < 1.0:
+        scored = [(accent_score(w["text"]), w) for w in s]
+        (score, tag), best = max(scored, key=lambda x: x[0][0])
+        if score < 2.5 or best["start"] - last < ACCENT_GAP or best["start"] < 1.0:
             continue
         end = min(best["end"] + 0.9, s[-1]["end"] + 0.2)
-        accents.append({"start": round(best["start"] - 0.05, 3), "end": round(end, 3)})
+        accents.append({"start": round(best["start"] - ACCENT_IN - 0.02, 3), "end": round(end, 3),
+                        "score": score, "tag": tag})
         last = best["start"]
 
-    return {"v": PLAN_VERSION, "shots": shots, "accents": accents,
-            "sfx": sfx_events(sentences, groups, shots, accents)}
-
-
-# ——— звуки ———
-# Смысловые триггеры: основы слов (русская морфология) и английские слова
-MONEY = ("деньг", "денег", "денежн", "рубл", "доллар", "евро", "миллион", "миллиард", "заработ", "зарплат", "бабк",
-         "бабл", "прибыл", "доход", "выручк", "money", "cash", "dollar", "million", "billion", "salary", "profit", "revenue")
-WRONG = ("ошибк", "ошибаю", "ошибал", "ошибёш", "ошибет", "нельзя", "неправильн", "провал", "mistake", "wrong", "fail")
-SECRET = ("секрет", "лайфхак", "фишк", "хитрост", "магия", "магич", "secret", "hack", "trick", "magic")
-CONTRAST = {"но", "однако", "стоп", "подожди", "подождите", "стоп-стоп", "but", "however", "wait", "stop"}
-LIST = {"во-первых", "во-вторых", "в-третьих", "в-четвёртых", "в-четвертых", "первое", "второе", "третье",
-        "firstly", "secondly", "thirdly", "first", "second", "third"}
-
-# Приоритет (кто важнее при столкновении), минимальный интервал между звуками одного типа
-KINDS = {
-    "punch": (100, 18.0),    # нарастание → удар на самом сильном слове
-    "cash": (80, 6.0),
-    "buzzer": (78, 6.0),
-    "sparkle": (76, 8.0),
-    "scratch": (74, 25.0),
-    "ding": (60, 4.0),
-    "pop": (50, 2.5),
-    "whoosh": (40, 7.0),
-}
-GLOBAL_GAP = 1.1        # между любыми двумя «попаданиями»
-RISER_LEN = 1.1         # подводка занимает секунду до удара — в это время других звуков нет
-EVENTS_PER_SEC = 1 / 3  # в среднем не чаще раза в 3 секунды
-
-
-def _semantic(w: dict, first: bool, index: int) -> str | None:
-    t = _n(w["text"])
-    if not t:
-        return None
-    if t.startswith(MONEY) or "$" in w["text"] or "₽" in w["text"]:
-        return "cash"
-    if t.startswith(WRONG):
-        return "buzzer"
-    if t.startswith(SECRET):
-        return "sparkle"
-    if first and index > 0 and t in CONTRAST:
-        return "scratch"
-    if first and t in LIST:
-        return "pop"
-    return None
-
-
-def sfx_events(sentences: list[list[dict]], groups: list[list[dict]], shots: list[dict],
-               accents: list[dict]) -> list[dict]:
-    """Кандидаты → жадный отбор по приоритету с интервалами → события со своим сэмплом, пиком и громкостью."""
-    cands: list[tuple[int, float, str]] = []  # (приоритет, anchor, вид)
-
-    # Акценты: в каждом окне ~18 с самый сильный — «нарастание → удар», остальные — «дзынь»
-    scored = []
-    for a in accents:
-        word = next((w for s in sentences for w in s if abs(w["start"] - 0.05 - a["start"]) < 0.02), None)
-        scored.append((accent_score(word["text"]) if word else 0, a["start"] + 0.05))
-    for score, t in scored:
-        best = max((sc for sc, tt in scored if abs(tt - t) < KINDS["punch"][1] / 2), default=score)
-        kind = "punch" if score >= best and score >= 3 and t > RISER_LEN + 0.3 else "ding"
-        cands.append((KINDS[kind][0], t, kind))
-
-    # Смысловые звуки на словах
-    for si, sent in enumerate(sentences):
-        for wi, w in enumerate(sent):
-            kind = _semantic(w, wi == 0, si)
-            if kind:
-                cands.append((KINDS[kind][0], w["start"], kind))
-
-    # Переходы: склейка между планами, если перед ней есть пауза (вдох) — не посреди речи
-    for k in range(1, len(groups)):
-        gap = groups[k][0]["start"] - groups[k - 1][-1]["end"]
-        if gap >= 0.3:
-            cands.append((KINDS["whoosh"][0], shots[k]["start"], "whoosh"))
-
-    duration = sentences[-1][-1]["end"] if sentences and sentences[-1] else 0.0
-    cap = int(duration * EVENTS_PER_SEC) + 1
-    chosen: list[tuple[float, str]] = []
-    # на одном слове — один звук: выше приоритет, раньше время
-    for prio, t, kind in sorted(cands, key=lambda c: (-c[0], c[1])):
-        if len(chosen) >= cap:
-            break
-        if any(k == kind and abs(t - tt) < KINDS[kind][1] for tt, k in chosen):
-            continue
-        if any(abs(t - tt) < GLOBAL_GAP for tt, _ in chosen):
-            continue
-        # подводка перед ударом — тишина для других звуков, и сама не налезает на чужие
-        if kind == "punch" and any(t - RISER_LEN - 0.2 < tt < t for tt, _ in chosen):
-            continue
-        if any(k == "punch" and tt - RISER_LEN - 0.2 < t < tt for tt, k in chosen):
-            continue
-        chosen.append((t, kind))
-
-    events: list[dict] = []
-    counters: dict[str, int] = {}
-    for t, kind in sorted(chosen):
-        i = counters[kind] = counters.get(kind, 0) + 1
-        names = {"punch": ["sfx2_riser", "sfx2_impact"], "whoosh": [f"sfx2_whoosh_{(i - 1) % 3 + 1}"],
-                 "pop": [f"sfx2_pop_{(i - 1) % 2 + 1}"]}.get(kind, [f"sfx2_{kind}"])
-        for name in names:
-            snd = SOUNDS[name]
-            events.append({"t": round(t, 3), "type": name, "cat": snd["cat"], "peak": snd["peak"], "gain": snd["gain"]})
-    return events
-
-
-def hook_events(total: float) -> list[dict]:
-    """События в шкале готового рилса, которых нет в плане: удар при появлении хука и «вжух» при его уходе.
-    anchor — момент попадания. То же считает превью в Editor.tsx."""
-    out = []
-    if total > 4:
-        imp, wh = SOUNDS["sfx2_impact"], SOUNDS["sfx2_whoosh_3"]
-        out.append({"t": imp["peak"], "type": "sfx2_impact", "cat": "accent", "peak": imp["peak"], "gain": imp["gain"] * 0.8})
-        out.append({"t": 3.2, "type": "sfx2_whoosh_3", "cat": "transition", "peak": wh["peak"], "gain": wh["gain"]})
-    return out
+    return {"v": PLAN_VERSION, "shots": shots, "accents": accents, "cues": cues(sentences), "hookEnd": HOOK_END}
 
 
 # ——— зум ———

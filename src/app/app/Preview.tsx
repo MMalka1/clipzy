@@ -63,6 +63,7 @@ export default function Preview({
   captionY,
   objectPosition,
   hook,
+  hookOpacity = 1,
   progress,
   emoji,
   scale,
@@ -89,6 +90,8 @@ export default function Preview({
   captionY: number;
   objectPosition: string;
   hook: string | null;
+  /** Хук уходит плавно — как fade в render.py */
+  hookOpacity?: number;
   progress: number | null;
   emoji: boolean;
   scale: number;
@@ -199,7 +202,13 @@ export default function Preview({
           <p
             ref={hookRef}
             className="absolute left-1/2 -translate-x-1/2 text-center font-extrabold text-[#0c0c0c]"
-            style={{ width: hookW * K, top: hookTop(hookH, faceY, captionY, canvas.h) * K, fontSize: 66 * K, lineHeight: 1.18 + 32 / 66 }}
+            style={{
+              width: hookW * K,
+              top: hookTop(hookH, faceY, captionY, canvas.h) * K,
+              fontSize: 66 * K,
+              lineHeight: 1.18 + 32 / 66,
+              opacity: hookOpacity,
+            }}
           >
             {/* Каждая строка — своя белая плашка, как в движке */}
             <span

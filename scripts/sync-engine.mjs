@@ -11,7 +11,7 @@ if (!existsSync(path.join(src, "app.py"))) {
 }
 
 // Только код и ресурсы: без .env (секреты), .venv и кэшей
-const DIRS = ["fonts", "brand", "models", "sandbox"];
+const DIRS = ["fonts", "brand", "models", "sandbox", "sfx"]; // sfx_src (исходники звуков) — не нужен
 const FILE = /\.(py|txt)$/;
 
 rmSync(dst, { recursive: true, force: true });

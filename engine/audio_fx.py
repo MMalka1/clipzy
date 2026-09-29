@@ -1,6 +1,6 @@
-"""Звук: слова-паразиты, события звуковых эффектов, синтез «вжух»/«дзынь» и фоновой музыки.
+"""Звук: слова-паразиты, громкость голоса, дорожка звуковых эффектов и синтез фоновой музыки.
 
-Все звуки генерируются кодом — без сторонних файлов и лицензий.
+Какие эффекты и где звучат — sfx_logic, сами звуки — sfx_kit (сэмплы CC0 из sfx/ или синтез).
 """
 
 import os
@@ -9,8 +9,8 @@ import wave
 
 import numpy as np
 
+import sfx_kit
 from emoji_map import emoji_for
-from sfx_synth import SOUNDS
 from paths import HOME
 
 SR = 44100
@@ -70,7 +70,7 @@ def compute_peaks(wav_path: str, count: int = 600) -> list[float]:
     return [round(max(0.04, float(p)), 3) for p in peaks]
 
 
-# ——— события звуковых эффектов ———
+# ——— ключевые слова (подсветка в субтитрах) ———
 KEY_STEMS = ("секрет", "ошибк", "главн", "никогда", "всегда", "деньг", "миллион", "важн", "запомн", "бесплатн",
              "лучш", "проблем", "правд", "stop", "secret", "never", "money", "free")
 
@@ -99,43 +99,6 @@ def _read(path: str) -> np.ndarray:
     with wave.open(path, "rb") as w:
         raw = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32767
         return raw.reshape(-1, w.getnchannels())
-
-
-def _lowpass(x: np.ndarray, cutoff: np.ndarray | float) -> np.ndarray:
-    """Однополюсный фильтр; cutoff может меняться во времени."""
-    c = np.broadcast_to(np.asarray(cutoff, dtype=np.float64), x.shape)
-    a = 1 - np.exp(-2 * np.pi * c / SR)
-    y = np.empty_like(x)
-    acc = 0.0
-    for i in range(len(x)):
-        acc += a[i] * (x[i] - acc)
-        y[i] = acc
-    return y
-
-
-def synth_whoosh() -> np.ndarray:
-    n = int(SR * 0.5)
-    t = np.linspace(0, 1, n)
-    rng = np.random.default_rng(7)
-    noise = rng.standard_normal(n)
-    cutoff = 400 + 5200 * np.sin(np.pi * t) ** 2  # фильтр раскрывается и закрывается
-    body = _lowpass(noise, cutoff) - _lowpass(noise, cutoff * 0.25)
-    env = np.sin(np.pi * t) ** 1.6
-    mono = body * env
-    mono /= np.abs(mono).max() + 1e-9
-    pan = t  # пролёт слева направо
-    return np.stack([mono * (1 - pan * 0.7), mono * (0.3 + pan * 0.7)], axis=1) * 0.55
-
-
-def synth_ding() -> np.ndarray:
-    n = int(SR * 1.3)
-    t = np.arange(n) / SR
-    f0 = 1318.5  # E6
-    partials = [(1.0, 1.0, 2.2), (2.76, 0.45, 3.5), (5.40, 0.22, 5.0), (8.93, 0.1, 7.0)]  # колокольные обертоны
-    x = sum(a * np.sin(2 * np.pi * f0 * r * t) * np.exp(-d * t) for r, a, d in partials)
-    x *= np.minimum(1, t / 0.003)
-    x /= np.abs(x).max()
-    return x * 0.5
 
 
 def _note(freq: float, dur: float, kind: str) -> np.ndarray:
@@ -228,21 +191,32 @@ def synth_track(kind: str) -> np.ndarray:
 
 
 def asset(name: str) -> str:
-    """Путь к сгенерированному звуку (whoosh, ding, music_lofi…), генерируем один раз."""
-    os.makedirs(ASSETS, exist_ok=True)
-    path = os.path.join(ASSETS, f"{name}.wav")
-    if not os.path.exists(path):
-        if name in SOUNDS:
-            _write(path, SOUNDS[name]["make"]())
-        elif name == "whoosh":
-            _write(path, synth_whoosh())
-        elif name == "ding":
-            _write(path, synth_ding())
-        elif name.startswith("music_") and name[6:] in TRACKS:
+    """Путь к звуку: эффект из набора (sfx_kit) или сгенерированная музыка (music_lofi…) — её делаем один раз."""
+    if name.startswith("music_") and name[6:] in TRACKS:
+        os.makedirs(ASSETS, exist_ok=True)
+        path = os.path.join(ASSETS, f"{name}.wav")
+        if not os.path.exists(path):
             _write(path, synth_track(name[6:]))
-        else:
-            raise KeyError(name)
-    return path
+        return path
+    return sfx_kit.path(name)
+
+
+def voice_level(wav_path: str, words: list[dict]) -> float | None:
+    """Громкость речи (RMS, dBFS) — только по участкам, где говорят. По ней эффекты ставятся под голос."""
+    try:
+        with wave.open(wav_path, "rb") as w:
+            sr = w.getframerate()
+            data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32767
+    except (OSError, wave.Error, EOFError):
+        return None
+    mask = np.zeros(len(data), dtype=bool)
+    for wd in words:
+        mask[int(max(wd["start"], 0) * sr) : int(max(wd["end"], 0) * sr)] = True
+    speech = data[mask]
+    if len(speech) < sr:  # меньше секунды речи — не мерим
+        return None
+    rms = float(np.sqrt(np.mean(speech**2)))
+    return round(20 * np.log10(max(rms, 1e-5)), 1)
 
 
 def build_music_track(music_path: str, ffmpeg: str, total: float, speech: list[tuple[float, float]],
@@ -282,25 +256,31 @@ def build_music_track(music_path: str, ffmpeg: str, total: float, speech: list[t
     _write(out_path, music * (env * volume)[:, None])
 
 
-OLD_GAIN = {"whoosh": 0.7, "ding": 0.45}  # звуки первой версии (для старых событий без gain)
-
-
-def build_sfx_track(events: list[dict], total: float, out_path: str, volume: float = 1.0):
-    """Все эффекты клипа — одной дорожкой. t — начало сэмпла в шкале готового рилса (может быть < 0:
-    у «нарастания» начало обрезается), gain — громкость звука в миксе."""
-    n = int(SR * (total + 1.5))
-    track = np.zeros((n, 2), dtype=np.float32)
+def build_sfx_track(events: list[dict], total: float, out_path: str):
+    """Все эффекты клипа — одной дорожкой (события из sfx_logic.clip_sfx). t — начало сэмпла в шкале готового
+    рилса (может быть < 0 — начало обрезается), gain — громкость, rate — скорость (высота) воспроизведения."""
+    n = int(SR * total)
+    track = np.zeros((max(n, 1), 2), dtype=np.float32)
     samples: dict[str, np.ndarray] = {}
     for e in events:
         if e["type"] not in samples:
             samples[e["type"]] = _read(asset(e["type"]))
         s = samples[e["type"]]
+        rate = float(e.get("rate") or 1.0)
+        if abs(rate - 1) > 1e-4:  # сдвиг высоты — пересэмплированием, как playbackRate в превью
+            m = max(1, int(len(s) / rate))
+            pos = np.arange(m) * rate
+            s = np.stack([np.interp(pos, np.arange(len(s)), s[:, c]) for c in range(s.shape[1])], axis=1)
+        if s.shape[1] == 1:
+            s = np.repeat(s, 2, axis=1)
         i = int(round(e["t"] * SR))
         if i < 0:
             s, i = s[-i:], 0
         if i >= n or not len(s):
             continue
         seg = s[: n - i]
-        g = e.get("gain", OLD_GAIN.get(e["type"], 0.5))
-        track[i : i + len(seg)] += seg * g * volume
-    _write(out_path, track[: int(SR * total)])
+        track[i : i + len(seg)] += seg * float(e.get("gain", 0.3))
+    fade = min(int(SR * 0.04), n)  # клип зацикливается — хвосты гасим к концу без щелчка
+    if fade:
+        track[n - fade : n] *= np.linspace(1, 0, fade, dtype=np.float32)[:, None]
+    _write(out_path, track[:n])

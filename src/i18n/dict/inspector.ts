@@ -65,12 +65,14 @@ const ru = {
   },
   sound: {
     title: "Звук",
-    whoosh: "Переходы",
-    whooshHint: "«Вжух» ровно на склейке между фразами и когда уходит хук",
-    ding: "Акценты",
-    dingHint: "Нарастание и удар на самом сильном моменте, «дзынь» на важных словах",
-    smart: "Звуки по смыслу",
-    smartHint: "Касса на деньгах, «неверно» на ошибках, блеск на секретах, скретч на «но», «поп» на пунктах списка",
+    fx: "Звуковые эффекты",
+    styles: { off: "Выкл", clean: "Аккуратно", punchy: "Динамично" },
+    cleanHint:
+      "Звук только там, где что-то происходит в кадре: удар на хуке, «вжух» на наездах и сменах плана, «поп» на эмодзи. Примерно раз в 10–12 секунд",
+    punchyHint: "Чаще и громче, с нарастанием перед главным моментом — в стиле Хормози",
+    meme: "Мемные звуки",
+    memeHint: "Касса на деньгах, «неверно» на ошибках, блеск на секретах — только в паузах или вместе с эмодзи",
+    needsVisuals: "Включите «Монтажный зум» или «Эмодзи» — эффектам не на что попадать",
     volume: "Громкость эффектов",
   },
   music: {
@@ -157,12 +159,14 @@ const en: typeof ru = {
   },
   sound: {
     title: "Sound",
-    whoosh: "Transitions",
-    whooshHint: "A whoosh right on the cut between phrases and when the hook leaves",
-    ding: "Accents",
-    dingHint: "A riser and hit on the strongest moment, a ding on key words",
-    smart: "Meaning sounds",
-    smartHint: "Cash register on money, buzzer on mistakes, sparkle on secrets, record scratch on “but”, pops on list items",
+    fx: "Sound effects",
+    styles: { off: "Off", clean: "Subtle", punchy: "Punchy" },
+    cleanHint:
+      "Sound only where something happens on screen: a hit on the hook, swishes on zoom-ins and cuts, pops on emoji. About one every 10–12 seconds",
+    punchyHint: "More often and louder, with a riser before the key moment — Hormozi style",
+    meme: "Meme sounds",
+    memeHint: "Cash register on money, buzzer on mistakes, sparkle on secrets — only in pauses or with an emoji",
+    needsVisuals: "Turn on Punch-in zoom or Emoji — effects follow on-screen events",
     volume: "Effects volume",
   },
   music: {

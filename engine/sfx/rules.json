@@ -1,0 +1,60 @@
+{
+  "v": 3,
+  "hookIn": 0.04,
+  "hookEnd": 3.2,
+  "hookOutLead": 0.07,
+  "hookMinTotal": 4.0,
+  "hookOutMinTotal": 3.8,
+  "accentIn": 0.18,
+  "startGuard": 0.4,
+  "quiet": [0.4, 2.8],
+  "endGuard": 0.1,
+  "tailMax": 0.5,
+  "voiceDefault": -20,
+  "voiceClamp": [-34, -12],
+  "voiceRefOffset": 14,
+  "duckDb": -3,
+  "maxGain": 2.0,
+  "periodicTol": 0.15,
+  "cutMinStep": 0.01,
+  "tickMinCount": 2,
+  "tickLead": 0.04,
+  "voicedPad": 0.03,
+  "top": { "tags": ["num", "money"], "score": 4, "minHook": 3.0, "min": 1.0 },
+  "riser": { "len": 1.2, "clear": 1.4, "minStart": 0.2 },
+  "prio": { "hook_in": 100, "hit": 90, "zoomin": 70, "meme": 65, "hook_out": 60, "speaker": 55, "pop": 50, "tick": 45, "cut": 40 },
+  "fam": { "hook_in": "hit", "hook_out": "whoosh", "hit": "hit", "zoomin": "zoomin", "cut": "swish", "speaker": "swish", "pop": "pop", "tick": "tick", "riser": "riser" },
+  "jitter": {
+    "hit": [1, 1], "zoomin": [1, 1.5], "swish": [1, 1.5], "whoosh": [1, 1.5], "pop": [2, 1.5], "tick": [2, 1.5],
+    "riser": [0, 1], "cash": [0, 1], "fail": [0, 1], "sparkle": [0.5, 1], "scratch": [0, 1], "bell": [0, 1]
+  },
+  "presets": {
+    "clean": {
+      "per": 12,
+      "minGap": 1.8,
+      "gap": { "hit": 20, "zoomin": 6, "cut": 8, "speaker": 8, "pop": 4, "tick": 3, "meme": 10 },
+      "hitsMax": 2,
+      "popEvery": 2,
+      "riser": false,
+      "rel": { "hook_in": -6, "hook_out": -16, "hit": -8, "zoomin": -14, "cut": -18, "speaker": -15, "pop": -14, "tick": -15, "meme": -8, "riser": -14 }
+    },
+    "punchy": {
+      "per": 7,
+      "minGap": 1.4,
+      "gap": { "hit": 15, "zoomin": 3, "cut": 5, "speaker": 5, "pop": 2.5, "tick": 2, "meme": 8 },
+      "hitsMax": 3,
+      "popEvery": 1,
+      "riser": true,
+      "rel": { "hook_in": -4, "hook_out": -13, "hit": -5, "zoomin": -11, "cut": -14, "speaker": -12, "pop": -11, "tick": -12, "meme": -6, "riser": -14 }
+    }
+  },
+  "meme": {
+    "per": 15,
+    "max": 4,
+    "pauseMin": 0.3,
+    "pauseLead": 0.06,
+    "scratchLead": 0.08,
+    "bellLast": 8,
+    "emoji": { "💰": "cash", "💸": "cash", "🤑": "cash", "❌": "fail", "🤫": "sparkle", "🛑": "scratch", "🔔": "bell" }
+  }
+}

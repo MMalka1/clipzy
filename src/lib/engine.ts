@@ -1,6 +1,7 @@
 /** Клиент движка Clipzy (Python, FastAPI). По умолчанию работает на этом же компьютере. */
 
 import type { Segment } from "./captions";
+import type { SfxKit, SfxStyle } from "./sfx";
 
 /** Свой компьютер или сервер — постоянный адрес из NEXT_PUBLIC_ENGINE_URL.
  *  Режим sandbox — движок в Vercel Sandbox: адрес выдаёт /api/engine, когда будит машину. */
@@ -20,56 +21,16 @@ export type Highlight = {
 
 export type Phrase = Segment & { emoji?: string | null };
 
-/** Звук в плане: t — момент «попадания» в шкале исходника, peak — где пик внутри сэмпла, gain — громкость.
- *  У планов первой версии нет cat/peak/gain: тогда type — "whoosh" или "ding", t — начало сэмпла. */
-export type SfxEvent = { t: number; type: string; cat?: SfxCat; peak?: number; gain?: number };
-export type SfxCat = "transition" | "accent" | "meaning";
-/** Звук в готовом рилсе: t — начало сэмпла (может быть < 0 — начало обрезается), gain уже с громкостью эффектов */
-export type ClipSfx = { t: number; type: string; gain: number };
-
-// Звуки хука — как hook_events() в edit_plan.py (пики и громкости из sfx_synth.SOUNDS)
-const HOOK_IMPACT = { type: "sfx2_impact", peak: 0.013, gain: 0.42 * 0.8 };
-const HOOK_WHOOSH = { type: "sfx2_whoosh_3", peak: 0.26, gain: 0.5, at: 3.2 };
-
-/**
- * Звуки клипа в шкале готового рилса — ровно как render.clip_sfx() в движке, чтобы превью звучало как видео.
- * mapTime/inside — перевод времени исходника в время рилса с учётом вырезанных пауз.
- */
-export function clipSfx(
-  planSfx: SfxEvent[],
-  opts: { transitions: boolean; accents: boolean; meaning: boolean; volume: number; hook: boolean },
-  range: { start: number; end: number },
-  total: number,
-  mapTime: (t: number) => number,
-  inside: (t: number) => boolean,
-): ClipSfx[] {
-  const cats = new Set<SfxCat>();
-  if (opts.transitions) cats.add("transition");
-  if (opts.accents) cats.add("accent");
-  if (opts.meaning) cats.add("meaning");
-  const vol = Math.min(Math.max(opts.volume, 0), 100) / 70;
-  const out: (ClipSfx & { a: number; cat: SfxCat })[] = [];
-  for (const e of planSfx) {
-    const cat: SfxCat = e.cat ?? (e.type === "whoosh" ? "transition" : "accent");
-    if (!cats.has(cat) || e.t < range.start || e.t > range.end || !inside(e.t)) continue;
-    const a = mapTime(e.t);
-    if (a < 0.4 || a > total - 0.25) continue; // не в первый миг (там хук) и не на самом обрыве
-    out.push({ a, t: a - (e.peak ?? 0), type: e.type, cat, gain: (e.gain ?? (e.type === "whoosh" ? 0.7 : 0.45)) * vol });
-  }
-  if (opts.hook && total > 4) {
-    if (cats.has("accent")) out.push({ a: HOOK_IMPACT.peak, t: 0, type: HOOK_IMPACT.type, cat: "accent", gain: HOOK_IMPACT.gain * vol });
-    const clash = out.some((x) => x.cat === "transition" && Math.abs(x.a - HOOK_WHOOSH.at) < 1.2);
-    if (cats.has("transition") && !clash)
-      out.push({ a: HOOK_WHOOSH.at, t: HOOK_WHOOSH.at - HOOK_WHOOSH.peak, type: HOOK_WHOOSH.type, cat: "transition", gain: HOOK_WHOOSH.gain * vol });
-  }
-  return out.sort((x, y) => x.t - y.t).map(({ t, type, gain }) => ({ t, type, gain }));
-}
-
-/** Монтажный ритм из движка (время исходника): планы, акценты, звуки. */
+/** Монтажный ритм из движка (время исходника): планы, акценты и слова-метки для звуков. */
 export type EditPlan = {
+  v?: number;
   shots: { start: number; end: number; zoom: number }[];
-  accents: { start: number; end: number }[];
-  sfx: SfxEvent[];
+  /** score/tag — сила и тип ключевого слова (num, money…): по ним выбирается звук наезда */
+  accents: { start: number; end: number; score?: number; tag?: string | null }[];
+  /** Слова для мемных звуков и «тиков» пунктов списка: kind — cash | fail | sparkle | scratch | bell | list */
+  cues?: { t: number; end: number; kind: string; first: boolean }[];
+  /** Сколько секунд хук на экране */
+  hookEnd?: number;
 };
 
 // Те же константы, что в edit_plan.py
@@ -121,12 +82,16 @@ export type Job = {
   faceY?: number | null;
   plan?: EditPlan;
   /** Путь кадра за спикером: [время исходника, положение 0..1]. mode=speaker — камера режет на того, кто говорит */
-  track?: { points: [number, number][]; fy: number; mode?: "speaker" } | null;
+  track?: { points: [number, number][]; fy: number; mode?: "speaker"; shots?: [number, number][] } | null;
   /** Постоянные участники (двое и больше) — для «экрана пополам» */
   speakers?: Speaker[];
   /** no_audio — нет звука, no_speech — речь не найдена, unclear — распознано неуверенно */
   speech?: "no_audio" | "no_speech" | "unclear" | null;
   peaks?: number[];
+  /** Громкость речи (dBFS) — эффекты ставятся относительно голоса */
+  voiceDb?: number | null;
+  /** Звуки эффектов и правила их выбора — от движка, чтобы превью звучало как рендер */
+  sfxKit?: SfxKit;
 };
 
 /** Участник подкаста: где лицо и какое окно исходника показать в половине экрана (доли кадра) */
@@ -138,7 +103,7 @@ export type RecentJob = { id: string; name: string; duration: number; created: n
 export type RenderOptions = {
   start: number;
   end: number;
-  phrases: { words: { text: string; start: number; end: number; filler?: boolean }[] }[];
+  phrases: { words: { text: string; start: number; end: number; filler?: boolean }[]; emoji: string | null }[];
   style: string;
   size: number;
   captionY: number;
@@ -154,9 +119,8 @@ export type RenderOptions = {
   progressBar: boolean;
   emoji: boolean;
   removeFillers: boolean;
-  sfxWhoosh: boolean;
-  sfxDing: boolean;
-  sfxSmart: boolean;
+  sfx: SfxStyle;
+  sfxMeme: boolean;
   sfxVolume: number;
   music: string | null;
   musicVolume: number;
@@ -583,6 +547,8 @@ export function trackAt(t: number, points: [number, number][]) {
 }
 
 export const assetUrl = (name: string) => `${ENGINE_URL}/assets/${name}.wav`;
+/** Звук эффекта: ?v — хеш файла, чтобы новый звук не застрял в кэше браузера */
+export const sfxUrl = (name: string, sha: string) => `${assetUrl(name)}?v=${sha}`;
 
 /** Адрес трека для превью: встроенный (lofi…) или загруженный (custom:<id>). */
 export const musicUrl = (music: string) =>

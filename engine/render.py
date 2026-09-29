@@ -2,6 +2,7 @@
 
 import glob
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -10,6 +11,9 @@ from functools import lru_cache
 import audio_fx
 import edit_plan
 import face_track
+import sfx_kit
+import sfx_logic
+from emoji_map import phrase_emoji
 from captions_render import H, W, canvas_of, region_h, region_top, render_caption, render_hook, render_watermark
 
 
@@ -72,6 +76,19 @@ def has_nvenc() -> bool:
         out = subprocess.run([tool("ffmpeg"), "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
         _nvenc = "h264_nvenc" in out
     return _nvenc
+
+
+_limiter: str | None = None
+
+
+def limiter() -> str:
+    """Лимитер на −1 dBFS. У alimiter по умолчанию включён «авто-уровень» (level) — он снова тянет пики к 0 dBFS;
+    выключаем его, если FFmpeg знает эту опцию (в старых сборках её нет)."""
+    global _limiter
+    if _limiter is None:
+        out = subprocess.run([tool("ffmpeg"), "-hide_banner", "-h", "filter=alimiter"], capture_output=True, text=True).stdout
+        _limiter = "alimiter=limit=0.891:latency=1" + (":level=false" if "auto level" in out else "")
+    return _limiter
 
 
 # ——— время ———
@@ -137,9 +154,10 @@ def build_caption_track(phrases, intervals, opts, workdir) -> tuple[str, list[tu
             continue
         phrase_windows.append((p0, p1))
         texts = [w["text"] for w in words]
+        emo = phrase_emoji_of(ph) if opts.get("emoji") else None  # тот же, что показывало превью
         for i, (s, _) in enumerate(mapped):
             nxt = mapped[i + 1][0] if i + 1 < len(mapped) else p1
-            states.append([s, max(nxt, s + 0.04), texts, i])
+            states.append([s, max(nxt, s + 0.04), texts, i, emo])
 
     states.sort(key=lambda s: s[0])
     # Короткие дыры между фразами не показываем пустыми — иначе субтитр мигает
@@ -157,9 +175,9 @@ def build_caption_track(phrases, intervals, opts, workdir) -> tuple[str, list[tu
                 cw, ch = opts.get("canvas", (W, H))
                 Image.new("RGBA", (cw, region_h(ch)), (0, 0, 0, 0)).save(path)
             else:
-                words, active = key
+                words, active, emo = key
                 render_caption(list(words), active, opts["style"], opts["size"], opts["center_y"],
-                               opts.get("accent"), opts.get("text_color"), opts.get("emoji", False),
+                               opts.get("accent"), opts.get("text_color"), emo or False,
                                canvas=opts.get("canvas", (W, H))).save(path)
             cache[key] = path
         return cache[key]
@@ -167,13 +185,13 @@ def build_caption_track(phrases, intervals, opts, workdir) -> tuple[str, list[tu
     lines = ["ffconcat version 1.0"]
     t = 0.0
     last = png_for("blank")
-    for s0, s1, words, active in states:
+    for s0, s1, words, active, emo in states:
         s0, s1 = max(s0, t), min(s1, total)
         if s1 <= s0:
             continue
         if s0 - t > 0.001:
             lines += [f"file '{png_for('blank').replace(os.sep, '/')}'", f"duration {s0 - t:.3f}"]
-        last = png_for((tuple(words), active))
+        last = png_for((tuple(words), active, emo))
         lines += [f"file '{last.replace(os.sep, '/')}'", f"duration {s1 - s0:.3f}"]
         t = s1
     if total - t > 0.001:
@@ -213,6 +231,9 @@ def frame_window(sw: int, sh: int, ow: int, oh: int, req: dict) -> dict:
     return {"cw": cw, "ch": ch, "cx": cx, "cy": cy, "fg_w": fg_w, "fg_h": fg_h, "k": k}
 
 
+HOOK_FADE = 0.15  # хук уходит за 0.15 с (как hookOpacity в превью)
+
+
 def split_panels(speakers: list[dict], sw: int, sh: int, ow: int, oh: int):
     """«Экран пополам»: в горизонтальном кадре участники рядом, в вертикальном и квадратном — друг над другом.
     Возвращает (рядом ли, размер окна в кадре, окна исходника)."""
@@ -221,35 +242,80 @@ def split_panels(speakers: list[dict], sw: int, sh: int, ow: int, oh: int):
     return side, (pw_o, ph_o), [face_track.panel_rect(p, sw, sh, pw_o / ph_o) for p in speakers[:2]]
 
 
-def clip_sfx(plan_sfx: list[dict], req: dict, start: float, end: float, intervals, total: float) -> list[dict]:
-    """Звуки клипа в шкале готового рилса: t — начало сэмпла, gain — с учётом громкости эффектов.
-    Категории: переходы (sfxWhoosh), акценты (sfxDing), смысловые (sfxSmart).
-    Ровно то же считает превью — clipSfx() в Editor.tsx."""
-    cats = {c for c, on in (("transition", req.get("sfxWhoosh")), ("accent", req.get("sfxDing")),
-                            ("meaning", req.get("sfxSmart", True))) if on}
-    vol = min(max(float(req.get("sfxVolume", 70)), 0.0), 100.0) / 70
-    out: list[dict] = []
-    for e in plan_sfx:
-        cat = e.get("cat") or ("transition" if e["type"] == "whoosh" else "accent")  # план первой версии
-        if cat not in cats or not (start <= e["t"] <= end and inside(e["t"], intervals)):
+def phrase_emoji_of(ph: dict) -> str | None:
+    """Эмодзи фразы: присланный превью (None — без эмодзи) или, у старых клиентов, по словам."""
+    emo = ph.get("emoji", "auto")
+    return phrase_emoji([w["text"] for w in ph["words"]]) if emo == "auto" else emo
+
+
+def to_out(items: list[dict], start: float, end: float, intervals) -> list[dict]:
+    """Планы/акценты — в шкалу готового рилса."""
+    out = []
+    for it in items:
+        if it["end"] <= start or it["start"] >= end:
             continue
-        a = map_time(e["t"], intervals)
-        if a < 0.4 or a > total - 0.25:  # не в первый миг (там хук) и не на самом обрыве
+        a, b = map_time(it["start"], intervals), map_time(it["end"], intervals)
+        if b - a > 0.05:
+            out.append({**it, "start": a, "end": b})
+    return out
+
+
+def sfx_settings(req: dict) -> dict:
+    """Эффекты: стиль off | clean | punchy, мемные звуки, громкость. Старые клиенты присылали три флажка."""
+    style, meme = req.get("sfx"), bool(req.get("sfxMeme"))
+    if style not in ("off", "clean", "punchy"):
+        legacy = [req.get(k) for k in ("sfxWhoosh", "sfxDing", "sfxSmart")]
+        style = "clean" if any(legacy) or all(v is None for v in legacy) else "off"
+        meme = False
+    return {"style": style, "meme": meme, "volume": min(max(float(req.get("sfxVolume", 70)), 0.0), 100.0)}
+
+
+def clip_sfx(plan: dict | None, req: dict, start: float, end: float, intervals, total: float, words: list[dict],
+             phrases: list[dict], track: dict | None, follow: bool, split: bool, voice_db: float | None) -> list[dict]:
+    """Что и когда происходит в кадре готового рилса → звуки (sfx_logic). Ровно тот же контекст собирает
+    превью (Editor.tsx) — звуки в превью и в видео совпадают."""
+    settings = sfx_settings(req)
+    if settings["style"] == "off" or settings["volume"] <= 0 or total <= 0:
+        return []
+    plan = plan or {}
+    zoom = bool(req.get("zoom")) and not split  # зум рисуется только так — и звуки наездов тоже
+    reel = sorted([map_time(w["start"], intervals), map_time(w["end"], intervals)]
+                  for w in words if w["end"] > start and w["start"] < end and inside(w["start"], intervals))
+    ctx = {
+        "total": total,
+        "words": reel,
+        "shots": to_out(plan.get("shots") or [], start, end, intervals) if zoom else [],
+        "accents": to_out(plan.get("accents") or [], start, end, intervals) if zoom else [],
+        "speakerCuts": [],
+        "emoji": [],
+        "cues": [],
+        "hook": bool(req.get("hook")),
+        "seed": int(math.floor(start * 1000 + 0.5)),
+        "voiceDb": voice_db,
+    }
+    if follow and track and track.get("mode") == "speaker" and not split:
+        ctx["speakerCuts"] = [map_time(t, intervals) for t, _ in (track.get("shots") or [])[1:] if start < t < end]
+    if req.get("emoji"):
+        for ph in phrases:
+            ws = ph["words"]
+            p0, p1 = map_time(ws[0]["start"], intervals), map_time(ws[-1]["end"], intervals)
+            emo = phrase_emoji_of(ph)
+            if emo and p1 > 0 and p0 < total and p1 - p0 >= 0.05:
+                ctx["emoji"].append({"t": p0, "emo": emo})
+    for c in plan.get("cues") or []:
+        if not (start <= c["t"] < end and inside(c["t"], intervals)):
             continue
-        out.append({"a": a, "t": a - e.get("peak", 0.0), "type": e["type"], "cat": cat, "gain": e.get("gain", 0.5) * vol})
-    if req.get("hook"):
-        for h in edit_plan.hook_events(total):
-            if h["cat"] not in cats:
-                continue
-            if h["cat"] == "transition" and any(x["cat"] == "transition" and abs(x["a"] - h["t"]) < 1.2 for x in out):
-                continue
-            out.append({"a": h["t"], "t": h["t"] - h["peak"], "type": h["type"], "cat": h["cat"], "gain": h["gain"] * vol})
-    return sorted(out, key=lambda x: x["t"])
+        a0, a1 = map_time(c["t"], intervals), map_time(c["end"], intervals)
+        prev_end = max((w[1] for w in reel if w[1] <= a0 + 1e-3), default=0.0)
+        next_start = min((w[0] for w in reel if w[0] >= a1 - 1e-3), default=total)
+        ctx["cues"].append({"a0": a0, "a1": a1, "kind": c["kind"], "first": bool(c.get("first")),
+                            "gapBefore": max(0.0, a0 - prev_end), "gapAfter": max(0.0, next_start - a1)})
+    return sfx_logic.clip_sfx(ctx, sfx_kit.public(), settings)
 
 
 def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str, out_path: str, on_progress,
                 plan: dict | None = None, music_path: str | None = None, track: dict | None = None,
-                speakers: list[dict] | None = None):
+                speakers: list[dict] | None = None, voice_db: float | None = None):
     os.makedirs(workdir, exist_ok=True)
     start, end = float(req["start"]), float(req["end"])
 
@@ -264,7 +330,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
     for ph in req.get("phrases", []):
         ws = [w for w in ph["words"] if w["end"] > start and w["start"] < end and not (drop_fillers and w.get("filler"))]
         if ws:
-            phrases.append({"words": ws})
+            phrases.append({"words": ws, **({"emoji": ph["emoji"]} if "emoji" in ph else {})})
     OW, OH = canvas_of(req.get("aspect"))  # формат готового видео
     opts = {
         "canvas": (OW, OH),
@@ -300,21 +366,10 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
     focus_y = min(max((face_y * sh - cy) / ch, 0.2), 0.7)
     if k < 0.999:  # в режиме «целиком» лицо может быть где угодно в кадре — наезжаем точно на него
         focus_y = min(max((face_y * sh - cy) / ch, 0.05), 0.95)
-    plan = plan or {"shots": [], "accents": [], "sfx": []}
+    plan = plan or {"shots": [], "accents": []}
     # «Экран пополам»: двое участников — друг над другом (вертикаль, квадрат) или рядом (горизонталь)
     split = req.get("layout") == "split" and speakers is not None and len(speakers) >= 2
     side, (pw_o, ph_o), panels = split_panels(speakers, sw, sh, OW, OH) if split else (False, (0, 0), [])
-
-    def to_out(items):
-        """Переводим планы/акценты в шкалу готового рилса."""
-        out = []
-        for it in items:
-            if it["end"] <= start or it["start"] >= end:
-                continue
-            a, b = map_time(it["start"], intervals), map_time(it["end"], intervals)
-            if b - a > 0.05:
-                out.append({**it, "start": a, "end": b})
-        return out
 
     inputs = ["-ss", f"{offset:.3f}", "-t", f"{end - offset + 0.5:.3f}", "-i", src,
               "-f", "concat", "-safe", "0", "-i", concat_path]
@@ -330,7 +385,8 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         elif req.get("faceY") is not None:
             face_out = ((OH - fg_h) / 2 + (float(req["faceY"]) * sh - cy) / ch * fg_h) / OH
         render_hook(req["hook"], face_out, opts["center_y"], canvas=(OW, OH)).save(hook_png)
-        inputs += ["-i", hook_png]
+        # Хук на экране первые HOOK_END секунд и уходит плавно (на уход — «вжух»)
+        inputs += ["-loop", "1", "-framerate", "30", "-t", f"{edit_plan.HOOK_END:.2f}", "-i", hook_png]
         hook_idx, idx = idx, idx + 1
     if req.get("watermark", True):
         wm_png = os.path.join(workdir, "watermark.png")
@@ -342,7 +398,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
 
     # Звуковые эффекты — одной дорожкой в шкале готового рилса
     sfx_idx = music_idx = None
-    events = clip_sfx(plan["sfx"], req, start, end, intervals, total)
+    events = clip_sfx(plan, req, start, end, intervals, total, words, phrases, track, bool(follow), split, voice_db)
     if events:
         sfx_wav = os.path.join(workdir, "sfx.wav")
         audio_fx.build_sfx_track(events, total, sfx_wav)
@@ -387,7 +443,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         pass
     elif req.get("zoom") and (plan["shots"] or plan["accents"]):
         # Монтажный ритм: планы (джамп-кат), медленный наезд и плавные наезды на акцентах — к лицу
-        z = edit_plan.zoom_expr(to_out(plan["shots"]), to_out(plan["accents"]))
+        z = edit_plan.zoom_expr(to_out(plan["shots"], start, end, intervals), to_out(plan["accents"], start, end, intervals))
         f.append(
             f"[{fg}]scale=w='trunc({fg_w}*({z})/2)*2':h='trunc(ow*{fg_h}/{fg_w}/2)*2':eval=frame:flags=bicubic,"
             f"crop={fg_w}:{fg_h}:'(iw-{fg_w})*{focus_x:.3f}':'(ih-{fg_h})*{focus_y:.3f}'[vfgz]"
@@ -410,7 +466,9 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
     f.append(f"[{last}][1:v]overlay=0:{region_top(opts['center_y'], OH)}:eof_action=pass[vcap]")
     last = "vcap"
     if hook_idx is not None:
-        f.append(f"[{last}][{hook_idx}:v]overlay=0:0:enable='lt(t,3.2)'[vh]")
+        out_at = edit_plan.HOOK_END - HOOK_FADE
+        f.append(f"[{hook_idx}:v]format=rgba,fade=t=out:st={out_at:.3f}:d={HOOK_FADE}:alpha=1[hk]")
+        f.append(f"[{last}][hk]overlay=0:0:eof_action=pass[vh]")
         last = "vh"
     if wm_idx is not None:
         f.append(f"[{last}][{wm_idx}:v]overlay=0:0[vw]")
@@ -434,7 +492,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         mix.append("sfx")
     has_out_audio = bool(mix)
     if len(mix) > 1:
-        f.append("".join(f"[{m}]" for m in mix) + f"amix=inputs={len(mix)}:normalize=0:duration=first,alimiter=limit=0.95:latency=1[aout]")
+        f.append("".join(f"[{m}]" for m in mix) + f"amix=inputs={len(mix)}:normalize=0:duration=first,{limiter()}[aout]")
     elif mix:
         f.append(f"[{mix[0]}]anull[aout]")
 

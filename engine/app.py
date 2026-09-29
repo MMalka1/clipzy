@@ -23,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import audio_fx
 import captions_render
@@ -31,6 +31,7 @@ import i18n
 import edit_plan
 import face_track
 import render
+import sfx_kit
 from paths import HOME
 from emoji_map import phrase_emoji
 from highlights import find_highlights, split_sentences, topic_title
@@ -226,10 +227,14 @@ def build_phrases(words: list[dict], max_words: int = 3, max_chars: int = 18, ma
     ]
 
 
-def annotate(job: dict):
-    """Помечаем слова-паразиты и ключевые слова, считаем события звуковых эффектов (один раз)."""
-    if (job.get("annotated") == 3 and (job.get("plan") or {}).get("v") == edit_plan.PLAN_VERSION) or not job.get("phrases"):
-        return
+ANNOTATED = 4  # версия разметки: при изменении логики пересчитываем
+
+
+def annotate(job: dict) -> bool:
+    """Помечаем слова-паразиты и ключевые слова, строим монтажный план, меряем громкость голоса (один раз).
+    True — разметку пересчитали (проект стоит сохранить)."""
+    if (job.get("annotated") == ANNOTATED and (job.get("plan") or {}).get("v") == edit_plan.PLAN_VERSION) or not job.get("phrases"):
+        return False
     words = [w for p in job["phrases"] for w in p["words"]]
     flags = audio_fx.mark_fillers(words)
     for w, f in zip(words, flags):
@@ -245,7 +250,10 @@ def annotate(job: dict):
     wav = os.path.join(job["dir"], "audio.wav")
     if not job.get("peaks") and os.path.exists(wav):
         job["peaks"] = audio_fx.compute_peaks(wav)
-    job["annotated"] = 3  # версия разметки: при изменении логики пересчитываем
+    if os.path.exists(wav):
+        job["voiceDb"] = audio_fx.voice_level(wav, [w for w, f in zip(words, flags) if not f])
+    job["annotated"] = ANNOTATED
+    return True
 
 
 def update(store: dict, key: str, **kw):
@@ -492,6 +500,12 @@ async def reassign(request: Request):
 
 
 @app.on_event("startup")
+def warm_sfx():
+    # Синтез запасных звуков — заранее, чтобы первый открытый проект не ждал
+    threading.Thread(target=sfx_kit.load, daemon=True).start()
+
+
+@app.on_event("startup")
 def requeue_broken():
     for jid in BROKEN:
         gpu_queue.submit(process_job, jid)
@@ -684,7 +698,8 @@ def create_job_from_url(req: LinkRequest, request: Request, user: dict = Depends
 
 
 PUBLIC_JOB = ("id", "name", "status", "stage", "progress", "error", "duration", "width", "height",
-              "language", "device", "phrases", "highlights", "faceX", "faceY", "plan", "peaks", "track", "speech", "speakers")
+              "language", "device", "phrases", "highlights", "faceX", "faceY", "plan", "peaks", "track", "speech", "speakers",
+              "voiceDb")
 
 
 @app.get("/jobs")
@@ -736,9 +751,12 @@ def job_source(job_id: str, user: dict = Depends(current_user)):
 def get_job(job_id: str, request: Request, user: dict = Depends(current_user)):
     job = owned_job(job_id, user)
     with lock:
-        annotate(job)
+        changed = annotate(job)
         out = {k: job.get(k) for k in PUBLIC_JOB}
+    if changed:  # иначе пересчёт (и заголовки клипов) повторялся бы после каждого перезапуска
+        threading.Thread(target=save_snapshot, args=(job_id,), daemon=True).start()
     out["error"] = i18n.tr(out["error"], i18n.lang_of(request.headers))
+    out["sfxKit"] = sfx_kit.public()  # звуки и правила — превью выбирает эффекты так же, как рендер
     # Участников старых проектов считали прежней логикой (путала людей с картинками) — «пополам» им не предлагаем
     if job.get("people_v") != face_track.PEOPLE_VERSION:
         out["speakers"] = None
@@ -754,6 +772,7 @@ class Word(BaseModel):
 
 class Phrase(BaseModel):
     words: list[Word]
+    emoji: str | None = Field("auto", max_length=16)  # эмодзи из превью; None — без эмодзи, auto — по словам
 
 
 class RenderRequest(BaseModel):
@@ -775,10 +794,12 @@ class RenderRequest(BaseModel):
     progressBar: bool = False
     emoji: bool = False
     removeFillers: bool = False
-    sfxWhoosh: bool = False
-    sfxDing: bool = False
-    sfxSmart: bool = True  # смысловые звуки: касса, «неверно», блеск, скретч, «поп»
+    sfx: str | None = None  # звуковые эффекты: off | clean (аккуратно) | punchy (динамично)
+    sfxMeme: bool = False  # мемные звуки: касса, «неверно», блеск… — на эмодзи или в паузе
     sfxVolume: float = 70  # громкость эффектов 0–100
+    sfxWhoosh: bool | None = None  # старые клиенты: три флажка вместо стиля
+    sfxDing: bool | None = None
+    sfxSmart: bool | None = None
     music: str | None = None  # lofi | ambient | drive | custom:<id>
     musicVolume: float = 35
     watermark: bool = True  # решает сервер по плану: во Free всегда включён
@@ -806,6 +827,7 @@ def run_render(rid: str):
             on_progress=lambda p: update(renders, rid, progress=round(p, 3)),
             plan=job.get("plan"), music_path=music_path(r["request"].get("music")), track=job.get("track"),
             speakers=job.get("speakers") if job.get("people_v") == face_track.PEOPLE_VERSION else None,
+            voice_db=job.get("voiceDb"),
         )
         update(renders, rid, status="done", progress=1.0, duration=result["duration"])
         save_render(rid)
@@ -839,9 +861,10 @@ def music_path(music: str | None) -> str | None:
 
 @app.get("/assets/{name}.wav")
 def get_asset(name: str):
-    if name not in ("whoosh", "ding") and name not in audio_fx.SOUNDS and name.removeprefix("music_") not in audio_fx.TRACKS:
+    if name not in sfx_kit.names() and name.removeprefix("music_") not in audio_fx.TRACKS:
         raise HTTPException(404)
-    return FileResponse(audio_fx.asset(name), media_type="audio/wav")
+    # Имя звука + ?v=<хеш> от сайта — можно кэшировать надолго
+    return FileResponse(audio_fx.asset(name), media_type="audio/wav", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.post("/music")

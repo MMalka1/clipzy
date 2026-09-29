@@ -36,7 +36,6 @@ import {
   type Panel,
   type Phrase,
   type RecentJob,
-  type SfxEvent,
   type Aspect,
   type RenderState,
   type WakeState,
@@ -44,8 +43,7 @@ import {
   peekEngine,
   subscribeWake,
   wakeEngine,
-  assetUrl,
-  clipSfx,
+  sfxUrl,
   engineHealth,
   musicUrl,
   EngineError,
@@ -69,6 +67,7 @@ import {
   zoomAt,
 } from "@/lib/engine";
 import { extractPeaks } from "@/lib/peaks";
+import { type ClipSfx3, type SfxCtx, clipSfx3, cueGaps } from "@/lib/sfx";
 import Inspector, { DEFAULT_SETTINGS, type Settings } from "./Inspector";
 import Preview, { previewWidth } from "./Preview";
 import PlanBadge, { isPaidPlan } from "@/components/PlanBadge";
@@ -452,7 +451,7 @@ export default function Editor() {
   const faceY = clip?.faceY ?? job?.faceY ?? null;
   // Кадр 9:16 и точка, в которую наезжает зум, — та же математика, что в render.py
   const canvas = CANVAS[s.aspect];
-  const { objectPosition, focus, frame, faceOut } = useMemo(() => {
+  const { objectPosition, focus, frame, faceOut, follow } = useMemo(() => {
     const sw = job?.width ?? 1920;
     const sh = job?.height ?? 1080;
     const r = canvas.w / canvas.h;
@@ -468,7 +467,7 @@ export default function Editor() {
         : { w: Math.min(1, (canvas.h * cw) / ch / canvas.w), h: 1 };
     const auto = s.autoCrop && faceX != null;
     const points = job?.track?.points ?? [];
-    const follow = s.autoCrop && points.length > 1 && sw - cw > 2;
+    const follow = auto && points.length > 1 && sw - cw > 2; // как в render.py: без лица кадр не ведём
     const cx = auto ? Math.min(Math.max(faceX! * sw - cw / 2, 0), sw - cw) : ((sw - cw) * s.cropX) / 100;
     // Слежение: кадр ведёт спикера; путь считался для окна 9:16 — пересчитываем под текущее окно
     const p = follow ? retarget(trackAt(time, points), trackFrac(sw, sh), cw / sw) : sw - cw < 1 ? 0.5 : cx / (sw - cw);
@@ -480,51 +479,94 @@ export default function Editor() {
     const fy = k < 0.999 ? Math.min(Math.max(fyRaw, 0.05), 0.95) : Math.min(Math.max(fyRaw, 0.2), 0.7);
     // Где лицо в готовом кадре — по нему хук обходит лицо (как в render.py)
     const faceOut = faceY == null ? null : (1 - frame.h) / 2 + fyRaw * frame.h;
-    return { objectPosition: `${p * 100}% ${py * 100}%`, focus: `${fx * 100}% ${fy * 100}%`, frame, faceOut };
+    return { objectPosition: `${p * 100}% ${py * 100}%`, focus: `${fx * 100}% ${fy * 100}%`, frame, faceOut, follow };
   }, [s.autoCrop, s.cropX, s.frameScale, faceX, faceY, job?.width, job?.height, job?.track, time, canvas]);
 
   /* ——— Звук превью: эффекты через WebAudio, музыка через <audio> ——— */
   const audioCtx = useRef<AudioContext | null>(null);
+  const sfxBus = useRef<AudioNode | null>(null);
+  const sfxDecoder = useRef<OfflineAudioContext | null>(null);
   const sfxBuffers = useRef<Record<string, AudioBuffer>>({});
-  const musicRef = useRef<HTMLAudioElement>(null);
   const sfxLoading = useRef<Set<string>>(new Set());
+  const sfxVoices = useRef<Set<{ src: AudioBufferSourceNode; gain: GainNode }>>(new Set());
+  const musicRef = useRef<HTMLAudioElement>(null);
+  const sfxKit = job?.sfxKit;
 
-  /** Подгружаем сэмплы нужных звуков (один раз на звук) */
-  const loadSfx = useCallback((names: string[]) => {
-    const ctx = audioCtx.current;
-    if (!ctx) return;
-    for (const name of names) {
-      if (sfxLoading.current.has(name)) continue;
-      sfxLoading.current.add(name);
-      fetch(assetUrl(name))
-        .then((r) => r.arrayBuffer())
-        .then((b) => ctx.decodeAudioData(b))
-        .then((buf) => {
-          sfxBuffers.current[name] = buf;
-        })
-        .catch(() => sfxLoading.current.delete(name));
-    }
-  }, []);
+  /** Подгружаем сэмплы (один раз на звук) — сразу, как стало известно, какие прозвучат, а не после Play.
+   *  Декодирует офлайн-контекст: ему не нужен клик пользователя. */
+  const loadSfx = useCallback(
+    (names: string[]) => {
+      if (!sfxKit) return;
+      sfxDecoder.current ??= new OfflineAudioContext(2, 1, 44100);
+      const dec = sfxDecoder.current;
+      for (const name of names) {
+        const sample = sfxKit.samples[name];
+        if (!sample || sfxLoading.current.has(name)) continue;
+        sfxLoading.current.add(name);
+        fetch(sfxUrl(name, sample.sha))
+          .then((r) => {
+            if (!r.ok) throw new Error(String(r.status));
+            return r.arrayBuffer();
+          })
+          .then((b) => dec.decodeAudioData(b))
+          .then((buf) => {
+            sfxBuffers.current[name] = buf;
+          })
+          .catch(() => sfxLoading.current.delete(name));
+      }
+    },
+    [sfxKit],
+  );
 
+  /** Контекст воспроизведения — по клику Play. Эффекты идут через лимитер, как alimiter в движке. */
   const ensureAudio = useCallback(() => {
-    if (audioCtx.current) {
-      audioCtx.current.resume();
-      return;
+    if (!audioCtx.current) {
+      const ctx = new AudioContext();
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -3;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.08;
+      limiter.connect(ctx.destination);
+      audioCtx.current = ctx;
+      sfxBus.current = limiter;
     }
-    audioCtx.current = new AudioContext();
+    audioCtx.current.resume().catch(() => {});
   }, []);
 
-  /** offset — сколько секунд сэмпла пропустить (начало «нарастания» до старта клипа) */
-  const playSfx = useCallback((name: string, gainValue: number, offset = 0) => {
+  /** Звук в момент at (часы AudioContext); offset — сколько секунд сэмпла пропустить */
+  const playSfx = useCallback((e: ClipSfx3, at: number, offset: number) => {
     const ctx = audioCtx.current;
-    const buf = sfxBuffers.current[name];
-    if (!ctx || !buf || offset >= buf.duration) return;
+    const bus = sfxBus.current;
+    const buf = sfxBuffers.current[e.type];
+    if (!ctx || !bus || !buf || offset >= buf.duration) return;
     const src = ctx.createBufferSource();
     const gain = ctx.createGain();
-    gain.gain.value = gainValue;
+    gain.gain.value = e.gain;
     src.buffer = buf;
-    src.connect(gain).connect(ctx.destination);
-    src.start(0, Math.max(0, offset));
+    src.playbackRate.value = e.rate;
+    src.connect(gain).connect(bus);
+    const voice = { src, gain };
+    sfxVoices.current.add(voice);
+    src.onended = () => sfxVoices.current.delete(voice);
+    src.start(at, offset);
+  }, []);
+
+  /** Пауза, перемотка, новый круг клипа: гасим звучащие и отменяем запланированные — коротко, без щелчка */
+  const stopSfx = useCallback(() => {
+    const ctx = audioCtx.current;
+    for (const { src, gain } of sfxVoices.current) {
+      try {
+        if (ctx) {
+          gain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+          src.stop(ctx.currentTime + 0.05);
+        } else src.stop();
+      } catch {
+        // уже остановлен
+      }
+    }
+    sfxVoices.current.clear();
   }, []);
 
   // Музыка: играет вместе с видео
@@ -546,23 +588,7 @@ export default function Editor() {
 
   /* ——— Воспроизведение: цикл по клипу, пропуск вырезанного, эффекты ——— */
   const hookOn = s.hookOn && hookText.trim().length > 0;
-  // Звуки клипа в шкале готового рилса — та же функция, что в движке (clipSfx ↔ render.clip_sfx)
-  const events = useMemo(
-    () =>
-      clipSfx(
-        (job?.plan?.sfx ?? []) as SfxEvent[],
-        { transitions: s.sfxWhoosh, accents: s.sfxDing, meaning: s.sfxSmart, volume: s.sfxVolume, hook: hookOn },
-        { start: range.start, end: range.end },
-        outTotal,
-        (t) => mapTime(t, intervals),
-        (t) => intervals.some((r) => t >= r.start && t <= r.end),
-      ),
-    [job?.plan?.sfx, s.sfxWhoosh, s.sfxDing, s.sfxSmart, s.sfxVolume, hookOn, range.start, range.end, outTotal, intervals],
-  );
-  useEffect(() => {
-    if (playing) loadSfx([...new Set(events.map((e) => e.type))]);
-  }, [playing, events, loadSfx]);
-
+  const hookEnd = job?.plan?.hookEnd ?? 3.2;
   const outPlan = useMemo(() => {
     const toOut = <T extends { start: number; end: number }>(items: T[]) =>
       items
@@ -583,10 +609,66 @@ export default function Editor() {
     const aspect = side ? canvas.w / 2 / canvas.h : canvas.w / (canvas.h / 2);
     return [panelRect(speakers[0], sw, sh, aspect), panelRect(speakers[1], sw, sh, aspect)];
   }, [s.layout, speakers, canvas, job?.width, job?.height]);
+  // Звуки клипа: что и когда происходит в кадре готового рилса — тот же контекст, что собирает render.clip_sfx,
+  // и тот же выбор (clipSfx3 = sfx_logic.clip_sfx), поэтому превью звучит как готовое видео
+  const track = job?.track;
+  const planCues = job?.plan?.cues;
+  const voiceDb = job?.voiceDb ?? null;
+  const sfxEvents = useMemo<ClipSfx3[]>(() => {
+    if (!sfxKit || s.sfx === "off" || outTotal <= 0) return [];
+    const m = (t: number) => mapTime(t, intervals);
+    const inside = (t: number) => intervals.some((r) => t >= r.start && t <= r.end);
+    const words = clipPhrases
+      .flatMap((p) => p.words)
+      .filter((w) => w.end > range.start && w.start < range.end && inside(w.start))
+      .map((w): [number, number] => [m(w.start), m(w.end)])
+      .sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+    const zoomOn = s.zoom && !split;
+    const ctx: SfxCtx = {
+      total: outTotal,
+      words,
+      shots: zoomOn ? outPlan.shots : [],
+      accents: zoomOn ? outPlan.accents : [],
+      speakerCuts:
+        follow && track?.mode === "speaker" && !split
+          ? (track.shots ?? []).slice(1).filter(([t]) => range.start < t && t < range.end).map(([t]) => m(t))
+          : [],
+      emoji: [],
+      cues: [],
+      hook: hookOn,
+      seed: Math.floor(range.start * 1000 + 0.5),
+      voiceDb,
+    };
+    if (s.emoji) {
+      for (const p of captionPhrases) {
+        const ws = p.words.filter((w) => w.end > range.start && w.start < range.end && !(s.removeFillers && w.filler));
+        if (!ws.length || !p.emoji) continue;
+        const p0 = m(ws[0].start);
+        const p1 = m(ws[ws.length - 1].end);
+        if (p1 > 0 && p0 < outTotal && p1 - p0 >= 0.05) ctx.emoji.push({ t: p0, emo: p.emoji });
+      }
+    }
+    for (const c of planCues ?? []) {
+      if (!(range.start <= c.t && c.t < range.end && inside(c.t))) continue;
+      const a0 = m(c.t);
+      const a1 = m(c.end);
+      ctx.cues.push({ a0, a1, kind: c.kind, first: c.first, ...cueGaps(words, a0, a1, outTotal) });
+    }
+    return clipSfx3(ctx, sfxKit, { style: s.sfx, meme: s.sfxMeme, volume: s.sfxVolume });
+  }, [
+    sfxKit, s.sfx, s.sfxMeme, s.sfxVolume, s.zoom, s.emoji, s.removeFillers, split, follow, track, planCues,
+    voiceDb, outTotal, intervals, clipPhrases, captionPhrases, outPlan, hookOn, range.start, range.end,
+  ]);
+  useEffect(() => {
+    loadSfx([...new Set(sfxEvents.map((e) => e.type))]);
+  }, [sfxEvents, loadSfx]);
+
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
-    let prev = videoRef.current?.currentTime ?? 0;
+    let prevB = mapTime(videoRef.current?.currentTime ?? 0, intervals);
+    let queued = new Set<number>(); // события, уже поставленные в очередь на этом круге клипа
+    let fresh = true; // первый кадр круга: звук, начавшийся «до нуля» (нарастание), можно начать с середины
     const loop = () => {
       const v = videoRef.current;
       if (v && intervals.length) {
@@ -598,23 +680,36 @@ export default function Editor() {
           const next = intervals.find((r) => r.start > t);
           if (next) v.currentTime = t = next.start;
         }
-        if (t > prev && t - prev < 0.5) {
-          // События — в шкале готового рилса: сравниваем с выходным временем
-          const a = mapTime(prev, intervals);
-          const b = mapTime(t, intervals);
-          for (const e of events) {
-            // в самом начале клипа звучат и звуки, начало которых раньше нуля (хук, обрезанное «нарастание»)
-            if ((e.t > a || (a <= 0 && e.t <= 0)) && e.t <= b) playSfx(e.type, e.gain, Math.max(0, a - e.t));
-          }
+        // Эффекты — в шкале готового рилса. В очередь WebAudio ставим на 0.25 с вперёд: попадание точное
+        // и не зависит от частоты кадров
+        const b = mapTime(t, intervals);
+        if (b < prevB - 0.05 || b - prevB > 0.5) {
+          stopSfx(); // новый круг или перемотка
+          queued = new Set();
+          fresh = true;
         }
-        prev = t;
+        const ctx = audioCtx.current;
+        if (ctx?.state === "running") {
+          sfxEvents.forEach((e, i) => {
+            if (queued.has(i) || e.t > b + 0.25) return;
+            queued.add(i);
+            const late = b - e.t;
+            if (late > 0.08 && !(fresh && b < 0.3 && e.t <= 0.05)) return; // опоздали — пропускаем, а не играем невпопад
+            playSfx(e, ctx.currentTime + Math.max(0, -late), Math.max(0, late) * e.rate);
+          });
+          fresh = false;
+        }
+        prevB = b;
         setTime(t);
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, intervals, events, playSfx]);
+    return () => {
+      cancelAnimationFrame(raf);
+      stopSfx();
+    };
+  }, [playing, intervals, sfxEvents, playSfx, stopSfx]);
 
   // Масштаб оверлеев превью под фактический размер кадра
   useEffect(() => {
@@ -765,7 +860,7 @@ export default function Editor() {
       const { id } = await startRender(job.id, {
         start: range.start,
         end: range.end,
-        phrases: captionPhrases.map((p) => ({ words: p.words })),
+        phrases: captionPhrases.map((p) => ({ words: p.words, emoji: p.emoji ?? null })),
         style: s.style,
         size: s.size,
         captionY: s.captionY,
@@ -783,9 +878,8 @@ export default function Editor() {
         progressBar: s.progressBar,
         emoji: s.emoji,
         removeFillers: s.removeFillers,
-        sfxWhoosh: s.sfxWhoosh,
-        sfxDing: s.sfxDing,
-        sfxSmart: s.sfxSmart,
+        sfx: s.sfx,
+        sfxMeme: s.sfxMeme,
         sfxVolume: s.sfxVolume,
         music: s.music,
         musicVolume: s.musicVolume,
@@ -1342,7 +1436,8 @@ export default function Editor() {
                 size={s.size}
                 captionY={s.captionY}
                 objectPosition={objectPosition}
-                hook={hookOn && outNow < 3.2 ? hookText.trim() : null}
+                hook={hookOn && outNow < hookEnd ? hookText.trim() : null}
+                hookOpacity={Math.min(1, Math.max(0, (hookEnd - outNow) / 0.15))}
                 progress={s.progressBar && outTotal > 0 ? outNow / outTotal : null}
                 emoji={s.emoji}
                 scale={scale}

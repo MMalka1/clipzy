@@ -7,6 +7,7 @@ import ColorSwatches from "@/components/ColorSwatches";
 import PlanBadge, { isPaidPlan } from "@/components/PlanBadge";
 import { ACCENTS, CAPTION_STYLES, type CaptionStyleId, TEXT_COLORS } from "@/lib/captions";
 import { ASPECTS, type Aspect, MUSIC_TRACKS, uploadMusic } from "@/lib/engine";
+import type { SfxStyle } from "@/lib/sfx";
 import { useLocale } from "@/i18n/client";
 import captions, { localizeColors } from "@/i18n/dict/captions";
 import inspector from "@/i18n/dict/inspector";
@@ -31,13 +32,11 @@ export type Settings = {
   progressBar: boolean;
   emoji: boolean;
   removeFillers: boolean;
-  /** Переходы: «вжух» на склейках и уходе хука */
-  sfxWhoosh: boolean;
-  /** Акценты: нарастание и удар на главном, «дзынь» на важных словах */
-  sfxDing: boolean;
-  /** Смысловые звуки: касса, «неверно», блеск, скретч, «поп» */
-  sfxSmart: boolean;
-  /** Громкость эффектов 0–100 */
+  /** Звуковые эффекты — только на событиях в кадре: off | clean (аккуратно) | punchy (динамично) */
+  sfx: SfxStyle;
+  /** Мемные звуки: касса, «неверно», блеск… — на подходящем эмодзи или в паузе */
+  sfxMeme: boolean;
+  /** Громкость эффектов 0–100 (70 — как задумано стилем) */
   sfxVolume: number;
   music: string | null;
   musicName: string | null;
@@ -61,9 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   progressBar: true,
   emoji: false,
   removeFillers: true,
-  sfxWhoosh: true,
-  sfxDing: true,
-  sfxSmart: true,
+  sfx: "clean",
+  sfxMeme: false,
   sfxVolume: 70,
   music: null,
   musicName: null,
@@ -325,11 +323,35 @@ export default function Inspector({
 
       <Panel title={t.sound.title}>
         <div className="space-y-3.5">
-          <Toggle label={t.sound.whoosh} hint={t.sound.whooshHint} checked={s.sfxWhoosh} onChange={(v) => set({ sfxWhoosh: v })} />
-          <Toggle label={t.sound.ding} hint={t.sound.dingHint} checked={s.sfxDing} onChange={(v) => set({ sfxDing: v })} />
-          <Toggle label={t.sound.smart} hint={t.sound.smartHint} checked={s.sfxSmart} onChange={(v) => set({ sfxSmart: v })} />
-          {(s.sfxWhoosh || s.sfxDing || s.sfxSmart) && (
-            <Slider label={t.sound.volume} value={s.sfxVolume} min={0} max={100} unit="%" onChange={(v) => set({ sfxVolume: v })} />
+          <div>
+            <p id="sfx-style" className="mb-2 text-sm">
+              {t.sound.fx}
+            </p>
+            <div role="radiogroup" aria-labelledby="sfx-style" className="grid grid-cols-3 rounded-md border border-line-strong p-0.5">
+              {SFX_STYLES.map((id) => (
+                <button
+                  key={id}
+                  role="radio"
+                  aria-checked={s.sfx === id}
+                  onClick={() => set({ sfx: id })}
+                  className={`flex h-8 cursor-pointer items-center justify-center rounded text-[13px] transition-colors ${
+                    s.sfx === id ? "bg-fg text-ink" : "text-dim hover:text-fg"
+                  }`}
+                >
+                  {t.sound.styles[id]}
+                </button>
+              ))}
+            </div>
+            {s.sfx !== "off" && (
+              <p className="mt-2 text-xs leading-relaxed text-faint">{s.sfx === "punchy" ? t.sound.punchyHint : t.sound.cleanHint}</p>
+            )}
+            {s.sfx !== "off" && !s.zoom && !s.emoji && <p className="mt-1.5 text-xs leading-relaxed text-dim">{t.sound.needsVisuals}</p>}
+          </div>
+          {s.sfx !== "off" && (
+            <>
+              <Toggle label={t.sound.meme} hint={t.sound.memeHint} checked={s.sfxMeme} onChange={(v) => set({ sfxMeme: v })} />
+              <Slider label={t.sound.volume} value={s.sfxVolume} min={0} max={100} unit="%" onChange={(v) => set({ sfxVolume: v })} />
+            </>
           )}
         </div>
         <MusicPicker s={s} set={set} />
@@ -353,6 +375,8 @@ export default function Inspector({
     </>
   );
 }
+
+const SFX_STYLES: SfxStyle[] = ["off", "clean", "punchy"];
 
 /** Обычное место субтитров в каждом формате (доля высоты, %) */
 const CAPTION_Y: Record<Aspect, number> = { "9:16": 68, "1:1": 78, "16:9": 84 };
