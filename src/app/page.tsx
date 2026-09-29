@@ -8,6 +8,7 @@ import FeatureDemos from "@/components/FeatureDemos";
 import FinalClap from "@/components/FinalClap";
 import IntroVideo from "@/components/IntroVideo";
 import { HandArrow, HandCheck, HandLine, HandPlus, Note } from "@/components/Hand";
+import JsonLd from "@/components/JsonLd";
 import LangSwitch from "@/components/LangSwitch";
 import Logo, { LogoIcon } from "@/components/Logo";
 import Marked from "@/components/Marked";
@@ -21,6 +22,7 @@ import WaitlistForm from "@/components/WaitlistForm";
 import landing from "@/i18n/dict/landing";
 import { getLocale } from "@/i18n/server";
 import { cssVars } from "@/lib/cssVars";
+import { appLd } from "@/lib/structured-data";
 import { SUPPORT } from "@/lib/support";
 
 const H2 = "text-[30px] font-extrabold leading-[1.08] tracking-[-0.03em] sm:text-[44px]";
@@ -331,6 +333,8 @@ export default async function Home() {
       </main>
 
       <SiteFooter logoLabel={t.logoHome} />
+      {/* Для поисковиков: что это за сервис и сколько стоит (на странице не видно) */}
+      <JsonLd data={appLd(locale)} />
     </div>
   );
 }

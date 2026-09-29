@@ -20,6 +20,8 @@ const ru = {
   editor: "Редактор",
   // ролики с «вшитыми» субтитрами на языке страницы: /demo/reel-1{suffix}.mp4
   reelSuffix: "",
+  // Страницы под поисковые запросы (/narezka-podkasta и др.) — только на русском; в EN показываем пометку
+  seoNote: "",
 
   hero: {
     badge: "бета, пока бесплатно",
@@ -271,6 +273,7 @@ const en: typeof ru = {
   tryItLong: "Try it free",
   editor: "Editor",
   reelSuffix: "-en",
+  seoNote: "This page is in Russian only. The main page and the editor are available in English.",
 
   hero: {
     badge: "beta, free for now",
