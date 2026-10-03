@@ -920,7 +920,7 @@ export default function Editor() {
         sfxVolume: s.sfxVolume,
         music: s.music,
         musicVolume: s.musicVolume,
-        badge: s.badge,
+        badge: s.badge && isPaidPlan(user?.plan, user?.anon), // во Free и так водяной знак по краям
       });
       if (exportLimit != null && !exported.includes(key)) setJob((j) => (j ? { ...j, exported: [...(j.exported ?? []), key] } : j));
       let fails = 0;

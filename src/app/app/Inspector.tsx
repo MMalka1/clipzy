@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfx: "clean",
   sfxMeme: false,
   sfxVolume: 70,
-  badge: false,
+  badge: true, // на платных тарифах «Сделано в Clipzy» включено по умолчанию — выключается в «Водяном знаке»
   music: null,
   musicName: null,
   musicVolume: 35,

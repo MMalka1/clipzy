@@ -176,7 +176,7 @@ const ru = {
     lead: "Бесплатный план — сразу и без карты. Pro и Studio можно купить уже сейчас, оплата по СБП.",
     plans: [
       { name: "Попробовать", price: "0\u00a0₽", note: "1 видео в день, скачать 2 клипа из видео, водяной знак по краям", status: "работает сейчас", now: true, featured: false },
-      { name: "Pro", price: "990\u00a0₽ / мес", note: "без водяного знака, до 8 видео в день и 300 минут в месяц, все клипы", status: "можно купить", now: true, featured: true },
+      { name: "Pro", price: "990\u00a0₽ / мес", note: "водяной знак выключается, до 8 видео в день и 300 минут в месяц, все клипы", status: "можно купить", now: true, featured: true },
       {
         name: "Studio",
         price: "2\u00a0490\u00a0₽ / мес",
@@ -436,7 +436,7 @@ const en: typeof ru = {
     lead: "The free plan works right away, no card. Pro and Studio are available now, paid via SBP.",
     plans: [
       { name: "Free", price: "$0", note: "1 video a day, download 2 clips per video, watermark on the edges", status: "live now", now: true, featured: false },
-      { name: "Pro", price: "$15 / mo", note: "no watermark, up to 8 videos a day and 300 minutes a month, every clip", status: "available now", now: true, featured: true },
+      { name: "Pro", price: "$15 / mo", note: "watermark can be switched off, up to 8 videos a day and 300 minutes a month, every clip", status: "available now", now: true, featured: true },
       {
         name: "Studio",
         price: "$39 / mo",
