@@ -90,7 +90,7 @@ const ru = {
     free: "Слева и справа · Free",
     remove: "Убрать в Pro",
     badge: "Добавить водяной знак",
-    badgeHint: "Маленький логотип «Clipzy» по центру внизу — если хотите рассказать о нас зрителям",
+    badgeHint: "Логотип Clipzy по бокам, как во Free — если хотите рассказать о нас зрителям",
   },
   preview: {
     play: "Воспроизвести",
@@ -186,7 +186,7 @@ const en: typeof ru = {
     free: "Left and right · Free",
     remove: "Remove with Pro",
     badge: "Add a watermark",
-    badgeHint: "A small Clipzy logo centered at the bottom — if you'd like to tell your viewers about us",
+    badgeHint: "The Clipzy logo on the sides, like on Free — if you'd like to tell your viewers about us",
   },
   preview: {
     play: "Play",

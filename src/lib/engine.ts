@@ -131,7 +131,7 @@ export type RenderOptions = {
   musicVolume: number;
   layout: "single" | "split";
   aspect: Aspect;
-  /** «Сделано в Clipzy» внизу кадра — по желанию */
+  /** Водяной знак по желанию на платном тарифе */
   badge: boolean;
 };
 

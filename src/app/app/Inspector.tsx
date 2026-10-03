@@ -38,7 +38,7 @@ export type Settings = {
   sfxMeme: boolean;
   /** Громкость эффектов 0–100 (70 — как задумано стилем) */
   sfxVolume: number;
-  /** «Сделано в Clipzy» внизу кадра — по желанию (для продвижения), на любом тарифе */
+  /** Водяной знак по желанию на платном тарифе (во Free он всегда) */
   badge: boolean;
   music: string | null;
   musicName: string | null;
@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfx: "clean",
   sfxMeme: false,
   sfxVolume: 70,
-  badge: false, // в подписке водяного знака нет; «Сделано в Clipzy» — по кнопке, если хочется
+  badge: false, // в подписке водяного знака нет; добавить — кнопкой в «Водяном знаке»
   music: null,
   musicName: null,
   musicVolume: 35,

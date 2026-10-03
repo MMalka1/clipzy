@@ -388,9 +388,10 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         # Хук на экране первые HOOK_END секунд и уходит плавно (на уход — «вжух»)
         inputs += ["-loop", "1", "-framerate", "30", "-t", f"{edit_plan.HOOK_END:.2f}", "-i", hook_png]
         hook_idx, idx = idx, idx + 1
+    # Водяной знак: во Free всегда, на платных — если сами добавили (кнопка в редакторе)
     if req.get("watermark", True) or req.get("badge"):
         wm_png = os.path.join(workdir, "watermark.png")
-        render_watermark((OW, OH), edges=req.get("watermark", True), badge=bool(req.get("badge"))).save(wm_png)
+        render_watermark((OW, OH)).save(wm_png)
         inputs += ["-i", wm_png]
         wm_idx, idx = idx, idx + 1
 
@@ -619,6 +620,6 @@ def render_cover(src: str, meta: dict, req: dict, out_path: str, track: dict | N
             d.text((OW / 2 + 6, y + 8), line, font=fnt, fill=(0, 0, 0, 170), anchor="ma")
             d.text((OW / 2, y), line, font=fnt, fill=color, anchor="ma", stroke_width=stroke, stroke_fill=(0, 0, 0))
     if req.get("watermark", True) or req.get("badge"):
-        img.alpha_composite(render_watermark((OW, OH), edges=req.get("watermark", True), badge=bool(req.get("badge"))))
+        img.alpha_composite(render_watermark((OW, OH)))
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path

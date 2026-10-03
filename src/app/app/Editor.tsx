@@ -1493,8 +1493,7 @@ export default function Editor() {
                 progress={s.progressBar && outTotal > 0 ? outNow / outTotal : null}
                 emoji={s.emoji}
                 scale={scale}
-                watermark={!isPaidPlan(user?.plan, user?.anon)}
-                badge={s.badge && isPaidPlan(user?.plan, user?.anon)}
+                watermark={!isPaidPlan(user?.plan, user?.anon) || s.badge}
               />
             )}
           </div>

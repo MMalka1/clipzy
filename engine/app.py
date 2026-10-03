@@ -910,7 +910,7 @@ class RenderRequest(BaseModel):
     music: str | None = Field(None, max_length=40)  # lofi | ambient | drive | custom:<id>
     musicVolume: float = Field(35, ge=0, le=100)
     watermark: bool = True  # решает сервер по плану: во Free всегда включён
-    badge: bool = False  # «сделано в Clipzy» внизу кадра — по желанию на любом тарифе
+    badge: bool = False  # водяной знак по желанию на платном тарифе (кнопка «Добавить водяной знак»)
     layout: str = "single"  # single | split — «экран пополам»: двое участников сверху и снизу (в 16:9 — рядом)
     aspect: str = "9:16"  # формат готового видео: 9:16 (Reels/Shorts), 16:9 (YouTube), 1:1 (лента)
 

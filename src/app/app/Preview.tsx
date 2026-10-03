@@ -72,7 +72,6 @@ export default function Preview({
   split = null,
   canvas = { w: 1080, h: 1920 },
   watermark = true,
-  badge = false,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   videoUrl: string;
@@ -106,8 +105,6 @@ export default function Preview({
   canvas?: { w: number; h: number };
   /** Во Free водяной знак есть в итоговом видео — показываем и в превью */
   watermark?: boolean;
-  /** «Сделано в Clipzy» по центру внизу — как badge в render.py */
-  badge?: boolean;
 }) {
   const t = inspector[useLocale()].preview;
   const bgRef = useRef<HTMLVideoElement>(null);
@@ -244,14 +241,6 @@ export default function Preview({
         {/* Водяной знак у обоих краёв — как в итоговом видео */}
         {watermark && <Watermark side="left" />}
         {watermark && <Watermark side="right" />}
-        {badge && (
-          <span
-            className="absolute left-1/2 -translate-x-1/2 opacity-[0.82] drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
-            style={{ bottom: 40 * K }}
-          >
-            <Sticker className="block" style={{ height: 58 * K }} />
-          </span>
-        )}
 
         {progress !== null && (
           <div className="absolute inset-x-0 bottom-0 bg-transparent" style={{ height: 14 * K }}>
