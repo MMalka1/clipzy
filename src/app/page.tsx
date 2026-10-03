@@ -4,7 +4,7 @@ import { ArrowDown, Scissors, Send } from "lucide-react";
 import CtaIcon from "@/components/CtaIcon";
 import DemoReel from "@/components/DemoReel";
 import BeforeAfter from "@/components/BeforeAfter";
-import BuyPro from "@/components/BuyPro";
+import BuyPro, { EarlyOffer } from "@/components/BuyPro";
 import ExampleCut from "@/components/ExampleCut";
 import FeatureDemos from "@/components/FeatureDemos";
 import FinalClap from "@/components/FinalClap";
@@ -21,7 +21,6 @@ import SiteFooter from "@/components/SiteFooter";
 import StylePlayground from "@/components/StylePlayground";
 import TapeMarquee from "@/components/TapeMarquee";
 import UserMenu from "@/components/UserMenu";
-import WaitlistForm from "@/components/WaitlistForm";
 import landing from "@/i18n/dict/landing";
 import { getLocale } from "@/i18n/server";
 import { cssVars } from "@/lib/cssVars";
@@ -279,9 +278,7 @@ export default async function Home() {
               <b>{t.early.price}</b>
               {t.early.after}
             </p>
-            <div className="mt-6">
-              <WaitlistForm tone="accent" />
-            </div>
+            <EarlyOffer className="mt-6" />
           </div>
         </section>
 

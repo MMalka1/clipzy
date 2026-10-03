@@ -5,25 +5,17 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/i18n/client";
 import growth from "@/i18n/dict/growth";
 
-type Offer = "pro" | "studio" | "studio_forever";
-const OFFERS: Offer[] = ["pro", "studio", "studio_forever"];
+type Offer = "pro" | "studio" | "studio_forever" | "studio_early";
+const OFFERS: Offer[] = ["pro", "studio", "studio_forever", "studio_early"];
+const EARLY_SLOTS = 3; // как EARLY_SLOTS в lib/payments.ts
 
-/**
- * Выбор и покупка тарифа: Pro или Studio, у Studio — месяц или навсегда; цена на кнопке меняется.
- * Не вошли — ведём на вход и возвращаем сюда с ?buy=<тариф>, тогда оплата открывается сама.
- * Ссылку на оплату даёт сервер (/api/pay) — ключи Platega в браузер не попадают.
- */
-export default function BuyPro({ className = "" }: { className?: string }) {
+/** Оплата: просим у сервера ссылку Platega и уходим на неё; не вошли — на вход с возвратом и ?buy=<тариф>. */
+function usePay() {
   const t = growth[useLocale()].pay;
   const router = useRouter();
-  const [plan, setPlan] = useState<"pro" | "studio">("pro");
-  const [forever, setForever] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const auto = useRef(false);
-  const offer: Offer = plan === "pro" ? "pro" : forever ? "studio_forever" : "studio";
-
-  async function buy(which: Offer = offer) {
+  async function buy(which: Offer) {
     setBusy(true);
     setError("");
     try {
@@ -44,6 +36,51 @@ export default function BuyPro({ className = "" }: { className?: string }) {
       setBusy(false);
     }
   }
+  return { t, busy, error, buy };
+}
+
+/** Купон раннего доступа: Studio навсегда дешевле, первым EARLY_SLOTS покупателям; показывает, сколько мест осталось. */
+export function EarlyOffer({ className = "" }: { className?: string }) {
+  const { t, busy, error, buy } = usePay();
+  const [left, setLeft] = useState<number | null>(null);
+  useEffect(() => {
+    fetch("/api/pay", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { left?: number }) => setLeft(typeof d.left === "number" ? d.left : null))
+      .catch(() => setLeft(null));
+  }, []);
+  const gone = left === 0;
+  return (
+    <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 ${className}`}>
+      <button
+        type="button"
+        onClick={() => buy("studio_early")}
+        disabled={busy || gone}
+        className="h-12 cursor-pointer rounded-xl bg-[#17140f] px-6 text-[16px] font-bold text-signal transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {gone ? t.earlyGone : busy ? t.going : t.earlyBuy}
+      </button>
+      {left !== null && !gone && <span className="font-mono text-sm font-semibold">{t.earlyLeft(left, EARLY_SLOTS)}</span>}
+      {error && (
+        <p role="alert" className="w-full text-sm font-semibold text-rec">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Выбор и покупка тарифа: Pro или Studio, у Studio — месяц или навсегда; цена на кнопке меняется.
+ * Не вошли — ведём на вход и возвращаем сюда с ?buy=<тариф>, тогда оплата открывается сама.
+ * Ссылку на оплату даёт сервер (/api/pay) — ключи Platega в браузер не попадают.
+ */
+export default function BuyPro({ className = "" }: { className?: string }) {
+  const { t, busy, error, buy } = usePay();
+  const [plan, setPlan] = useState<"pro" | "studio">("pro");
+  const [forever, setForever] = useState(false);
+  const auto = useRef(false);
+  const offer: Offer = plan === "pro" ? "pro" : forever ? "studio_forever" : "studio";
 
   // Вернулись после входа с ?buy=… — выбираем тот же тариф и открываем оплату (один раз)
   useEffect(() => {
@@ -81,7 +118,7 @@ export default function BuyPro({ className = "" }: { className?: string }) {
       <p className="text-center text-[15px] leading-snug text-dim">{t.perks[offer]}</p>
       <button
         type="button"
-        onClick={() => buy()}
+        onClick={() => buy(offer)}
         disabled={busy}
         className="flex h-14 cursor-pointer flex-col items-center justify-center rounded-xl bg-signal px-6 text-[#17140f] shadow-[0_3px_0_#17140f] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
       >

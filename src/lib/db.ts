@@ -592,3 +592,23 @@ export async function revokePaidPlan(userId: string) {
     .prepare(`update "user" set plan = 'free', "planUntil" = null, "updatedAt" = ? where id = ? and plan <> 'creator' and "planUntil" is not null`)
     .run(new Date().toISOString(), userId);
 }
+
+/** Сколько оплачено (или ждёт оплаты последние 30 минут) платежей с такой суммой и сроком — для ограниченных предложений. */
+export async function countTaken(amount: number, days: number): Promise<number> {
+  await ensureTables("payments", PAYMENTS);
+  if (pg) {
+    const r = await pg.query(
+      `select count(*)::int as n from payments where amount = $1 and days = $2
+        and (status = 'paid' or (status = 'pending' and created_at > now() - interval '30 minutes'))`,
+      [amount, days],
+    );
+    return Number(r.rows[0]?.n ?? 0);
+  }
+  const since = new Date(Date.now() - 30 * 60_000).toISOString();
+  const row = localDb()
+    .prepare(
+      "select count(*) as n from payments where amount = ? and days = ? and (status = 'paid' or (status = 'pending' and created_at > ?))",
+    )
+    .get(amount, days, since) as { n: number };
+  return Number(row.n);
+}

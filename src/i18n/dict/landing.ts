@@ -220,9 +220,9 @@ const ru = {
 
   early: {
     title: "Ранний доступ",
-    before: "Когда откроем оплату, первым в списке дадим Studio навсегда за ",
+    before: "Первым трём покупателям — Studio навсегда за ",
     price: "3\u00a0900\u00a0₽",
-    after: " вместо 9\u00a0900\u00a0₽. Оставьте почту, напишем один раз.",
+    after: " вместо 9\u00a0900\u00a0₽. Без подписки, один платёж.",
   },
 
   final: {
@@ -480,9 +480,9 @@ const en: typeof ru = {
 
   early: {
     title: "Early access",
-    before: "When we switch on payments, everyone on this list gets Studio forever for ",
-    price: "$49",
-    after: " instead of $149. Leave your email, we'll write exactly once.",
+    before: "The first three buyers get Studio forever for ",
+    price: "3\u00a0900\u00a0₽",
+    after: " instead of 9\u00a0900\u00a0₽. No subscription, one payment.",
   },
 
   final: {

@@ -3,7 +3,12 @@ import growth from "@/i18n/dict/growth";
 import { getLocale } from "@/i18n/server";
 import { auth, authReady } from "@/lib/auth";
 import { clientIp, hit } from "@/lib/db";
-import { OFFERS, type OfferKey, paymentsEnabled, startPayment } from "@/lib/payments";
+import { OFFERS, type OfferKey, earlyLeft, paymentsEnabled, startPayment } from "@/lib/payments";
+
+/** Сколько мест по ранней цене осталось — для купона на главной. */
+export async function GET() {
+  return Response.json({ left: await earlyLeft().catch(() => 0) }, { headers: { "Cache-Control": "no-store" } });
+}
 
 /** Начать оплату: создаём платёж и отдаём ссылку на страницу оплаты Platega. Только для своего аккаунта (не гостя). */
 export async function POST(request: Request) {
@@ -26,6 +31,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { offer?: string } | null;
   const key = (body?.offer ?? "pro") as OfferKey;
   if (!(key in OFFERS)) return Response.json({ error: t.failed }, { status: 400 });
+  if (key === "studio_early" && (await earlyLeft()) <= 0) return Response.json({ error: t.earlyGone }, { status: 409 });
   try {
     return Response.json({ url: await startPayment(user.id, key) });
   } catch (e) {

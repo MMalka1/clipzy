@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
+  countTaken,
   createPayment,
   getPayment,
   grantPaidPlan,
@@ -23,7 +24,15 @@ export const OFFERS = {
   pro: { plan: "pro", days: 30, amount: 990, title: "Clipzy Pro на 30 дней" },
   studio: { plan: "studio", days: 30, amount: 2490, title: "Clipzy Studio на 30 дней" },
   studio_forever: { plan: "studio", days: 0, amount: 9900, title: "Clipzy Studio навсегда" },
+  // Ранний доступ: Studio навсегда дешевле — только первым EARLY_SLOTS покупателям
+  studio_early: { plan: "studio", days: 0, amount: 3900, title: "Clipzy Studio навсегда — ранний доступ" },
 } as const;
+export const EARLY_SLOTS = 3;
+
+/** Сколько мест по ранней цене ещё осталось (оплаченные и ждущие оплаты последние 30 минут — заняты). */
+export async function earlyLeft() {
+  return Math.max(EARLY_SLOTS - (await countTaken(OFFERS.studio_early.amount, 0)), 0);
+}
 export type OfferKey = keyof typeof OFFERS;
 
 export const paymentsEnabled = () => Boolean(process.env.PLATEGA_MERCHANT_ID && process.env.PLATEGA_SECRET);
