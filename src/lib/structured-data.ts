@@ -24,7 +24,7 @@ export function appLd(locale: Locale): Ld {
   const offers: Ld[] = t.pricing.plans.map((p, i) => ({
     "@type": "Offer",
     name: p.name,
-    // платные планы пока не продаются — так и пишем («после беты»); заметки из прайса не берём: в EN там доллары
+    // план, который пока не продаётся, помечаем его статусом («скоро»); заметки из прайса не берём: в EN там доллары
     ...(!p.now && { description: p.status }),
     price: rub(rubPlans[i].price),
     priceCurrency: "RUB",

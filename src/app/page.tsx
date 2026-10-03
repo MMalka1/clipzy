@@ -4,6 +4,7 @@ import { ArrowDown, Scissors, Send } from "lucide-react";
 import CtaIcon from "@/components/CtaIcon";
 import DemoReel from "@/components/DemoReel";
 import BeforeAfter from "@/components/BeforeAfter";
+import BuyPro from "@/components/BuyPro";
 import ExampleCut from "@/components/ExampleCut";
 import FeatureDemos from "@/components/FeatureDemos";
 import FinalClap from "@/components/FinalClap";
@@ -257,10 +258,10 @@ export default async function Home() {
           </h2>
           <p className="mt-3 max-w-xl text-[15px] text-dim sm:text-[17px]">{t.pricing.lead}</p>
           <PriceReceipt t={t.pricing} />
-          <div className="mt-10 text-center md:mt-14">
-            <Link href="/app" className={CTA}>
+          <BuyPro className="mt-10 md:mt-14" />
+          <div className="mt-6 text-center">
+            <Link href="/app" className="font-semibold underline decoration-line-strong underline-offset-4 hover:decoration-fg">
               {t.pricing.cta}
-              <CtaIcon />
             </Link>
           </div>
           <div

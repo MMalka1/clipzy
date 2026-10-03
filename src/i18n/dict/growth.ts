@@ -11,6 +11,24 @@ const ruDays = (n: number) => {
 const planName = (plan: string) => (plan ? plan[0].toUpperCase() + plan.slice(1) : "Pro");
 
 const ru = {
+  pay: {
+    buy: "Купить Pro — 990 ₽ за 30 дней",
+    note: "Оплата по СБП через Platega. Повторная покупка продлевает срок.",
+    login: "Войдите или зарегистрируйтесь — Pro включится на ваш аккаунт",
+    soon: "Оплата откроется совсем скоро",
+    tooMany: "Слишком много попыток. Попробуйте через час.",
+    failed: "Не получилось открыть оплату. Попробуйте ещё раз.",
+    going: "Открываем оплату…",
+    successTitle: "Спасибо! Оплата принята",
+    waiting: "Ждём подтверждения от банка — обычно это меньше минуты. Страница обновится сама.",
+    active: (date: string) => `Pro включён до ${date}`,
+    toEditor: "В редактор",
+    toProfile: "Профиль",
+    failTitle: "Оплата не прошла",
+    failText: "Деньги не списаны. Можно попробовать ещё раз — или напишите нам, если что-то пошло не так.",
+    retry: "Попробовать ещё раз",
+    support: "Поддержка",
+  },
   promo: {
     banner: (code: string, days: number, plan: string) => `Промокод ${code}: ${days} ${ruDays(days)} ${planName(plan)} бесплатно`,
     guestTail: "зарегистрируйтесь, и он включится сам",
@@ -104,6 +122,24 @@ const ru = {
 };
 
 const en: typeof ru = {
+  pay: {
+    buy: "Buy Pro — 990 ₽ for 30 days",
+    note: "Paid in rubles via SBP (Platega). Buying again extends the term.",
+    login: "Sign in or sign up — Pro will be added to your account",
+    soon: "Payments open very soon",
+    tooMany: "Too many attempts. Try again in an hour.",
+    failed: "Couldn't open the payment page. Try again.",
+    going: "Opening payment…",
+    successTitle: "Thank you! Payment received",
+    waiting: "Waiting for the bank to confirm — usually under a minute. This page refreshes itself.",
+    active: (date: string) => `Pro is on until ${date}`,
+    toEditor: "Open the editor",
+    toProfile: "Profile",
+    failTitle: "Payment didn't go through",
+    failText: "You weren't charged. You can try again, or contact us if something went wrong.",
+    retry: "Try again",
+    support: "Support",
+  },
   promo: {
     banner: (code: string, days: number, plan: string) => `Promo code ${code}: ${days} ${days === 1 ? "day" : "days"} of ${planName(plan)} free`,
     guestTail: "sign up and it turns on by itself",

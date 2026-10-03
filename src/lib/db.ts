@@ -440,3 +440,144 @@ export async function expireTrial(userId: string) {
     )
     .run(now, userId, now);
 }
+
+/* ——— Оплата (Platega): платёж создаём до перехода на оплату, тариф включаем по подтверждённому callback ——— */
+const PAYMENTS = {
+  pg: [
+    `create table if not exists payments (id text primary key, user_id text not null, plan text not null, days int not null,
+      amount int not null, status text not null default 'pending', tx_id text, created_at timestamptz not null default now(),
+      paid_at timestamptz)`,
+    "create index if not exists payments_created_at on payments (created_at)",
+  ],
+  sqlite: [
+    `create table if not exists payments (id text primary key, user_id text not null, plan text not null, days integer not null,
+      amount integer not null, status text not null default 'pending', tx_id text, created_at text not null, paid_at text)`,
+    "create index if not exists payments_created_at on payments (created_at)",
+  ],
+};
+
+export type Payment = {
+  id: string;
+  user_id: string;
+  plan: string;
+  days: number;
+  amount: number;
+  status: "pending" | "paid" | "canceled" | "chargeback";
+  tx_id: string | null;
+  created_at: string | null;
+  paid_at: string | null;
+};
+
+const asPayment = (x: Record<string, unknown>): Payment => ({
+  id: String(x.id),
+  user_id: String(x.user_id),
+  plan: String(x.plan),
+  days: Number(x.days),
+  amount: Number(x.amount),
+  status: String(x.status) as Payment["status"],
+  tx_id: (x.tx_id as string | null) ?? null,
+  created_at: iso(x.created_at),
+  paid_at: iso(x.paid_at),
+});
+
+export async function createPayment(p: { id: string; userId: string; plan: string; days: number; amount: number }) {
+  await ensureTables("payments", PAYMENTS);
+  if (pg) {
+    await pg.query("insert into payments (id, user_id, plan, days, amount) values ($1, $2, $3, $4, $5)", [
+      p.id, p.userId, p.plan, p.days, p.amount,
+    ]);
+    return;
+  }
+  localDb()
+    .prepare("insert into payments (id, user_id, plan, days, amount, created_at) values (?, ?, ?, ?, ?, ?)")
+    .run(p.id, p.userId, p.plan, p.days, p.amount, new Date().toISOString());
+}
+
+export async function setPaymentTx(id: string, txId: string) {
+  await ensureTables("payments", PAYMENTS);
+  if (pg) await pg.query("update payments set tx_id = $1 where id = $2", [txId, id]);
+  else localDb().prepare("update payments set tx_id = ? where id = ?").run(txId, id);
+}
+
+export async function getPayment(id: string): Promise<Payment | null> {
+  await ensureTables("payments", PAYMENTS);
+  const row = pg
+    ? (await pg.query("select * from payments where id = $1", [id])).rows[0]
+    : localDb().prepare("select * from payments where id = ?").get(id);
+  return row ? asPayment(row as Record<string, unknown>) : null;
+}
+
+/** Ждущий платёж → оплачен. Одним UPDATE: повторный callback не продлит тариф второй раз. */
+export async function markPaymentPaid(id: string): Promise<boolean> {
+  await ensureTables("payments", PAYMENTS);
+  if (pg) {
+    const r = await pg.query("update payments set status = 'paid', paid_at = now() where id = $1 and status = 'pending'", [id]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  const r = localDb()
+    .prepare("update payments set status = 'paid', paid_at = ? where id = ? and status = 'pending'")
+    .run(new Date().toISOString(), id);
+  return Number(r.changes) > 0;
+}
+
+/** canceled — только для ждущего; chargeback — для оплаченного (банк вернул деньги). */
+export async function setPaymentStatus(id: string, status: "canceled" | "chargeback"): Promise<boolean> {
+  await ensureTables("payments", PAYMENTS);
+  const from = status === "canceled" ? "pending" : "paid";
+  if (pg) {
+    const r = await pg.query("update payments set status = $1 where id = $2 and status = $3", [status, id, from]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  const r = localDb().prepare("update payments set status = ? where id = ? and status = ?").run(status, id, from);
+  return Number(r.changes) > 0;
+}
+
+export async function listPayments(limit = 30): Promise<(Payment & { email: string | null })[]> {
+  await ensureTables("payments", PAYMENTS);
+  const q = `select p.*, u.email from payments p left join "user" u on u.id = p.user_id order by p.created_at desc limit ${Number(limit)}`;
+  const rows = pg ? (await pg.query(q)).rows : localDb().prepare(q).all();
+  return (rows as Record<string, unknown>[]).map((x) => ({ ...asPayment(x), email: (x.email as string | null) ?? null }));
+}
+
+/**
+ * Оплаченный тариф на days дней. Если такой же тариф ещё действует — продлеваем от его конца, иначе от сейчас.
+ * Создателя и бессрочный платный тариф не трогаем.
+ */
+export async function grantPaidPlan(userId: string, plan: string, days: number): Promise<Date | null> {
+  if (pg) {
+    const r = await pg.query(
+      `update "user" set plan = $1,
+          "planUntil" = greatest(case when plan = $1 then coalesce("planUntil", now()) else now() end, now()) + make_interval(days => $2),
+          "updatedAt" = now()
+        where id = $3 and plan <> 'creator' and not (plan <> 'free' and "planUntil" is null)
+        returning "planUntil"`,
+      [plan, days, userId],
+    );
+    return r.rows[0] ? new Date(r.rows[0].planUntil) : null;
+  }
+  const db = localDb();
+  const u = db.prepare(`select plan, "planUntil" from "user" where id = ?`).get(userId) as
+    | { plan: string | null; planUntil: string | null }
+    | undefined;
+  if (!u || u.plan === "creator" || (u.plan && u.plan !== "free" && !u.planUntil)) return null;
+  const cur = u.plan === plan && u.planUntil ? new Date(u.planUntil).getTime() : 0;
+  const until = new Date(Math.max(cur, Date.now()) + days * 86400_000);
+  db.prepare(`update "user" set plan = ?, "planUntil" = ?, "updatedAt" = ? where id = ?`).run(
+    plan, until.toISOString(), new Date().toISOString(), userId,
+  );
+  return until;
+}
+
+/** Банк вернул деньги — оплаченный срок снимаем (создателя не трогаем). */
+export async function revokePaidPlan(userId: string) {
+  if (pg) {
+    await pg.query(
+      `update "user" set plan = 'free', "planUntil" = null, "updatedAt" = now() where id = $1 and plan <> 'creator' and "planUntil" is not null`,
+      [userId],
+    );
+    return;
+  }
+  localDb()
+    .prepare(`update "user" set plan = 'free', "planUntil" = null, "updatedAt" = ? where id = ? and plan <> 'creator' and "planUntil" is not null`)
+    .run(new Date().toISOString(), userId);
+}
