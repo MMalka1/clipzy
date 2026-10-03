@@ -699,14 +699,18 @@ export default function Editor() {
     let fresh = true; // первый кадр круга: звук, начавшийся «до нуля» (нарастание), можно начать с середины
     const loop = () => {
       const v = videoRef.current;
-      if (v && intervals.length) {
+      // Пока браузер перематывает — ждём: иначе он ещё «стоит» до точки прыжка, и мы прыгали бы снова и снова
+      if (v && intervals.length && !v.seeking) {
         let t = v.currentTime;
         const last = intervals[intervals.length - 1];
+        // Перемотка встаёт на ближайший кадр — бывает чуть раньше точки. Пару кадров до начала куска считаем «внутри»,
+        // а прыгаем чуть дальше начала: иначе превью застревало, снова и снова прыгая в одно и то же место
+        const SNAP = 0.08;
         if (t >= last.end || t < intervals[0].start - 0.5) {
-          v.currentTime = t = intervals[0].start;
-        } else if (!intervals.some((r) => t >= r.start && t <= r.end)) {
-          const next = intervals.find((r) => r.start > t);
-          if (next) v.currentTime = t = next.start;
+          v.currentTime = t = intervals[0].start + 0.02;
+        } else if (!intervals.some((r) => t >= r.start - SNAP && t <= r.end)) {
+          const next = intervals.find((r) => r.start - SNAP > t);
+          if (next) v.currentTime = t = next.start + 0.02;
         }
         // Эффекты — в шкале готового рилса. В очередь WebAudio ставим на 0.25 с вперёд: попадание точное
         // и не зависит от частоты кадров
@@ -916,6 +920,7 @@ export default function Editor() {
         sfxVolume: s.sfxVolume,
         music: s.music,
         musicVolume: s.musicVolume,
+        badge: s.badge,
       });
       if (exportLimit != null && !exported.includes(key)) setJob((j) => (j ? { ...j, exported: [...(j.exported ?? []), key] } : j));
       let fails = 0;
@@ -1489,6 +1494,7 @@ export default function Editor() {
                 emoji={s.emoji}
                 scale={scale}
                 watermark={!isPaidPlan(user?.plan, user?.anon)}
+                badge={s.badge && isPaidPlan(user?.plan, user?.anon)}
               />
             )}
           </div>

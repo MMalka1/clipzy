@@ -38,6 +38,8 @@ export type Settings = {
   sfxMeme: boolean;
   /** Громкость эффектов 0–100 (70 — как задумано стилем) */
   sfxVolume: number;
+  /** «Сделано в Clipzy» внизу кадра — по желанию (для продвижения), на любом тарифе */
+  badge: boolean;
   music: string | null;
   musicName: string | null;
   musicVolume: number;
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfx: "clean",
   sfxMeme: false,
   sfxVolume: 70,
+  badge: false,
   music: null,
   musicName: null,
   musicVolume: 35,
@@ -359,9 +362,12 @@ export default function Inspector({
 
       <Panel title={t.watermark.title}>
         {isPaidPlan(plan) ? (
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-dim">{t.watermark.off}</span>
-            <PlanBadge plan={plan} />
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-dim">{t.watermark.off}</span>
+              <PlanBadge plan={plan} />
+            </div>
+            <Toggle label={t.watermark.badge} hint={t.watermark.badgeHint} checked={s.badge} onChange={(v) => set({ badge: v })} />
           </div>
         ) : (
           <div className="flex items-center justify-between text-sm">

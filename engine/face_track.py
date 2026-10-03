@@ -119,7 +119,9 @@ def detect_track(video_path: str, meta: dict, ffmpeg: str, on_progress=lambda p:
 
 
 # Версия логики участников: поменяли её — старые проекты не предлагают «экран пополам» по устаревшим данным
-PEOPLE_VERSION = 2
+PEOPLE_VERSION = 3
+TOGETHER_MIN = 0.3  # двое должны быть в кадре вместе хотя бы в 30% моментов, когда виден более редкий из них
+SIZE_RATIO_MAX = 2.2  # и лица сопоставимого размера (не человек и его отражение на мониторе за спиной)
 PERSON_DX, PERSON_DY = 0.07, 0.09  # насколько далеко от своего места может оказаться лицо того же человека
 
 
@@ -166,7 +168,20 @@ def _people(frames: list[list[list[float]]]) -> list[dict]:
         steps = np.abs(np.diff(arr[:, 1])) + np.abs(np.diff(arr[:, 2]))
         if len(steps) and float(np.mean(steps < 0.0005)) > 0.33:
             continue
-        people.append({"x": float(np.median(arr[:, 1])), "y": float(np.median(arr[:, 2])), "size": size})
+        people.append({"x": float(np.median(arr[:, 1])), "y": float(np.median(arr[:, 2])), "size": size,
+                       "_seen": set(arr[:, 0].astype(int).tolist())})
+    if len(people) >= 2:
+        # «Экран пополам» берёт обоих из одного кадра — значит, в кадре они должны быть одновременно.
+        # Один человек в разных местах (смена плана, камера ходит) вместе с собой не встречается никогда
+        def together(a: dict, b: dict) -> bool:
+            small, big = sorted((a["size"], b["size"]))
+            both = len(a["_seen"] & b["_seen"]) / max(min(len(a["_seen"]), len(b["_seen"])), 1)
+            return both >= TOGETHER_MIN and big <= SIZE_RATIO_MAX * small
+
+        kept = [p for p in people if any(together(p, q) for q in people if q is not p)]
+        people = kept or [max(people, key=lambda p: len(p["_seen"]))]
+    for p in people:
+        p.pop("_seen", None)
     return sorted(people, key=lambda p: p["x"])
 
 

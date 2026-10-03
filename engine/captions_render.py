@@ -496,8 +496,9 @@ def render_hook(title: str, face_y: float | None = None, caption_y: float = 0.68
 WATERMARK_LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brand", "logo_sticker.png")
 
 
-def render_watermark(canvas: tuple[int, int] = (W, H)) -> Image.Image:
-    """Водяной знак — логотип-наклейка clipzy вертикально у левого и правого края."""
+def render_watermark(canvas: tuple[int, int] = (W, H), edges: bool = True, badge: bool = False) -> Image.Image:
+    """Водяной знак — логотип-наклейка clipzy вертикально у левого и правого края (edges, во Free всегда)
+    и/или по центру внизу (badge — по желанию на любом тарифе: продвигать Clipzy своими роликами)."""
     CW, CH = canvas
     img = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
     logo = Image.open(WATERMARK_LOGO).convert("RGBA")
@@ -513,8 +514,11 @@ def render_watermark(canvas: tuple[int, int] = (W, H)) -> Image.Image:
     label.alpha_composite(_colored(shadow.filter(ImageFilter.GaussianBlur(5)), "#000000"))
     label.alpha_composite(logo, (pad, pad))
 
-    left = label.rotate(90, expand=True)  # читается снизу вверх
-    right = label.rotate(-90, expand=True)  # читается сверху вниз
-    img.alpha_composite(left, (18 - pad, int(CH * 0.36 - left.height / 2)))
-    img.alpha_composite(right, (CW - right.width - 18 + pad, int(CH * 0.64 - right.height / 2)))
+    if edges:
+        left = label.rotate(90, expand=True)  # читается снизу вверх
+        right = label.rotate(-90, expand=True)  # читается сверху вниз
+        img.alpha_composite(left, (18 - pad, int(CH * 0.36 - left.height / 2)))
+        img.alpha_composite(right, (CW - right.width - 18 + pad, int(CH * 0.64 - right.height / 2)))
+    if badge:  # над полоской прогресса: низ наклейки — в 40px от края кадра
+        img.alpha_composite(label, ((CW - label.width) // 2, CH - label.height - 40 + pad))
     return img
