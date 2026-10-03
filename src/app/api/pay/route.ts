@@ -3,7 +3,7 @@ import growth from "@/i18n/dict/growth";
 import { getLocale } from "@/i18n/server";
 import { auth, authReady } from "@/lib/auth";
 import { clientIp, hit } from "@/lib/db";
-import { OFFERS, type OfferKey, earlyLeft, paymentsEnabled, startPayment } from "@/lib/payments";
+import { OFFERS, type OfferKey, earlyLeft, earlyStatus, paymentsEnabled, startPayment } from "@/lib/payments";
 
 /** Сколько мест по ранней цене осталось — для купона на главной. */
 export async function GET() {
@@ -31,7 +31,10 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { offer?: string } | null;
   const key = (body?.offer ?? "pro") as OfferKey;
   if (!(key in OFFERS)) return Response.json({ error: t.failed }, { status: 400 });
-  if (key === "studio_early" && (await earlyLeft()) <= 0) return Response.json({ error: t.earlyGone }, { status: 409 });
+  if (key === "studio_early") {
+    const early = await earlyStatus(user.id);
+    if (early !== "ok") return Response.json({ error: early === "gone" ? t.earlyGone : t.earlyHeld }, { status: 409 });
+  }
   try {
     return Response.json({ url: await startPayment(user.id, key) });
   } catch (e) {

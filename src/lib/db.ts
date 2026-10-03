@@ -593,22 +593,28 @@ export async function revokePaidPlan(userId: string) {
     .run(new Date().toISOString(), userId);
 }
 
-/** Сколько оплачено (или ждёт оплаты последние 30 минут) платежей с такой суммой и сроком — для ограниченных предложений. */
-export async function countTaken(amount: number, days: number): Promise<number> {
+/**
+ * Ограниченное предложение: сколько платежей с такой суммой и сроком оплачено (paid) и сколько других людей
+ * открыли оплату за последние 15 минут и ещё не заплатили (pending) — свои попытки exceptUser не считаем.
+ */
+export async function countTaken(amount: number, days: number, exceptUser = ""): Promise<{ paid: number; pending: number }> {
   await ensureTables("payments", PAYMENTS);
   if (pg) {
     const r = await pg.query(
-      `select count(*)::int as n from payments where amount = $1 and days = $2
-        and (status = 'paid' or (status = 'pending' and created_at > now() - interval '30 minutes'))`,
-      [amount, days],
+      `select count(*) filter (where status = 'paid')::int as paid,
+              count(distinct user_id) filter (where status = 'pending' and user_id <> $3 and created_at > now() - interval '15 minutes')::int as pending
+         from payments where amount = $1 and days = $2`,
+      [amount, days, exceptUser],
     );
-    return Number(r.rows[0]?.n ?? 0);
+    return { paid: Number(r.rows[0]?.paid ?? 0), pending: Number(r.rows[0]?.pending ?? 0) };
   }
-  const since = new Date(Date.now() - 30 * 60_000).toISOString();
-  const row = localDb()
+  const since = new Date(Date.now() - 15 * 60_000).toISOString();
+  const db = localDb();
+  const paid = db.prepare("select count(*) as n from payments where amount = ? and days = ? and status = 'paid'").get(amount, days) as { n: number };
+  const pending = db
     .prepare(
-      "select count(*) as n from payments where amount = ? and days = ? and (status = 'paid' or (status = 'pending' and created_at > ?))",
+      "select count(distinct user_id) as n from payments where amount = ? and days = ? and status = 'pending' and user_id <> ? and created_at > ?",
     )
-    .get(amount, days, since) as { n: number };
-  return Number(row.n);
+    .get(amount, days, exceptUser, since) as { n: number };
+  return { paid: Number(paid.n), pending: Number(pending.n) };
 }

@@ -29,9 +29,19 @@ export const OFFERS = {
 } as const;
 export const EARLY_SLOTS = 3;
 
-/** Сколько мест по ранней цене ещё осталось (оплаченные и ждущие оплаты последние 30 минут — заняты). */
+/** Сколько мест по ранней цене осталось — по оплаченным. Открытая, но не оплаченная попытка место не занимает. */
 export async function earlyLeft() {
-  return Math.max(EARLY_SLOTS - (await countTaken(OFFERS.studio_early.amount, 0)), 0);
+  return Math.max(EARLY_SLOTS - (await countTaken(OFFERS.studio_early.amount, 0)).paid, 0);
+}
+
+/**
+ * Можно ли этому человеку начать оплату по ранней цене. Мест не осталось — gone; все оставшиеся сейчас
+ * оплачивают другие (открыли оплату за последние 15 минут) — held, чтобы не продать лишнее место.
+ */
+export async function earlyStatus(userId: string): Promise<"ok" | "gone" | "held"> {
+  const { paid, pending } = await countTaken(OFFERS.studio_early.amount, 0, userId);
+  if (paid >= EARLY_SLOTS) return "gone";
+  return paid + pending >= EARLY_SLOTS ? "held" : "ok";
 }
 export type OfferKey = keyof typeof OFFERS;
 
