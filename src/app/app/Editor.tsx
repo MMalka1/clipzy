@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Check,
   Download,
+  Lock,
   Clock,
   Film,
   Image as ImageIcon,
@@ -71,6 +72,7 @@ import { extractPeaks } from "@/lib/peaks";
 import { type ClipSfx3, type SfxCtx, clipSfx3, cueGaps } from "@/lib/sfx";
 import Inspector, { DEFAULT_SETTINGS, type Settings } from "./Inspector";
 import Preview, { previewWidth } from "./Preview";
+import BuyPro from "@/components/BuyPro";
 import PlanBadge, { isPaidPlan } from "@/components/PlanBadge";
 import { useLocale } from "@/i18n/client";
 import editor from "@/i18n/dict/editor";
@@ -123,6 +125,9 @@ function keepIntervals(phrases: Phrase[], range: Range, removePauses: boolean, r
 const isLocalSite = () => typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
 
 /** Время исходника → время готового рилса. */
+/** Какой клип скачан: начало и конец в десятых секунды — так же, как clip_key в движке. */
+const clipKey = (a: number, b: number) => `${Math.floor(a * 10 + 0.5)}-${Math.floor(b * 10 + 0.5)}`;
+
 function mapTime(t: number, intervals: Range[]) {
   let acc = 0;
   for (const r of intervals) {
@@ -434,6 +439,13 @@ export default function Editor() {
     [clipPhrases, range.start, range.end, s.removePauses, s.removeFillers],
   );
   const outTotal = mapTime(range.end, intervals);
+  // Free: из видео можно скачать exportLimit клипов — как считает движок (clip_key в app.py)
+  const exportLimit = job?.exportLimit ?? null;
+  const exported = job?.exported ?? [];
+  const lockedFor = (a: number, b: number) =>
+    exportLimit != null && exported.length >= exportLimit && !exported.includes(clipKey(a, b));
+  const lockedNow = lockedFor(range.start, range.end);
+  const [paywall, setPaywall] = useState(false);
   const outNow = mapTime(time, intervals);
 
   // Фразы субтитров: оригинал или перевод; вырезки паузы/паразитов всегда считаются по оригиналу
@@ -870,8 +882,13 @@ export default function Editor() {
       setAuthAsk({ reason: t.authToExport, then: "export" });
       return;
     }
+    if (lockedNow) {
+      setPaywall(true);
+      return;
+    }
     videoRef.current?.pause();
     setRender({ id: "", status: "queued", progress: 0 });
+    const key = clipKey(range.start, range.end);
     try {
       const { id } = await startRender(job.id, {
         start: range.start,
@@ -900,6 +917,7 @@ export default function Editor() {
         music: s.music,
         musicVolume: s.musicVolume,
       });
+      if (exportLimit != null && !exported.includes(key)) setJob((j) => (j ? { ...j, exported: [...(j.exported ?? []), key] } : j));
       let fails = 0;
       const poll = async () => {
         try {
@@ -918,6 +936,11 @@ export default function Editor() {
       };
       poll();
     } catch (e) {
+      if (e instanceof EngineError && e.status === 403 && !user?.anon && exportLimit != null) {
+        setRender(null);
+        setPaywall(true); // лимит клипов во Free
+        return;
+      }
       if (e instanceof EngineError && e.status === 403) {
         setRender(null);
         setAuthAsk({ reason: e.message, then: "export" });
@@ -1250,8 +1273,8 @@ export default function Editor() {
             disabled={render?.status === "queued" || render?.status === "rendering"}
             className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-signal px-3 text-[13px] font-semibold text-ink transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            <Download className="h-3.5 w-3.5" aria-hidden="true" />
-            {clip ? t.exportClip : t.exportVideo}
+            {lockedNow ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />}
+            {lockedNow ? t.unlockAll : clip ? t.exportClip : t.exportVideo}
           </button>
           <LangSwitch compact className="sm:hidden" />
           <div className="hidden sm:block">
@@ -1305,8 +1328,14 @@ export default function Editor() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {tab === "clips" ? (
               <ul>
+                {(exportLimit != null || job?.trial) && (
+                  <li className="border-b border-line px-4 py-2 text-[12px] text-faint">
+                    {job?.trial ? t.trialNote : t.freeCounter(Math.min(exported.length, exportLimit ?? 0), exportLimit ?? 0)}
+                  </li>
+                )}
                 {highlights.map((h, i) => {
                   const on = h.id === selected;
+                  const locked = lockedFor(h.start, h.end);
                   return (
                     <li key={h.id}>
                       <button
@@ -1333,6 +1362,7 @@ export default function Editor() {
                         >
                           {h.score}
                         </span>
+                        {locked && <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" aria-label={t.unlockAll} />}
                       </button>
                     </li>
                   );
@@ -1563,6 +1593,20 @@ export default function Editor() {
       {authAsk && <AuthModal reason={authAsk.reason} onClose={() => setAuthAsk(null)} onSuccess={afterAuth} />}
       {render && (
         <ExportDialog render={render} aspect={s.aspect} wake={wake} onClose={() => setRender(null)} onRetry={exportClip} />
+      )}
+      {paywall && exportLimit != null && (
+        <div role="dialog" aria-modal="true" aria-label={t.paywallTitle(exportLimit)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+          <div className="paper w-full max-w-md rounded-2xl border-2 border-fg bg-ink p-6 text-fg">
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-xl font-extrabold leading-tight">{t.paywallTitle(exportLimit)}</h2>
+              <button onClick={() => setPaywall(false)} aria-label={t.close} className="cursor-pointer text-dim hover:text-fg">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-2 text-[15px] leading-relaxed text-dim">{t.paywallText(Math.max(highlights.length - exported.length, 0))}</p>
+            <BuyPro className="mt-6" />
+          </div>
+        </div>
       )}
     </div>
   );

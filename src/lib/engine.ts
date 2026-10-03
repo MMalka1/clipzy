@@ -85,6 +85,11 @@ export type Job = {
   track?: { points: [number, number][]; fy: number; mode?: "speaker"; shots?: [number, number][] } | null;
   /** Постоянные участники (двое и больше) — для «экрана пополам» */
   speakers?: Speaker[];
+  /** Free: сколько клипов из видео можно скачать (null — без ограничения) и какие уже скачаны ("начало-конец" в десятых секунды) */
+  exportLimit?: number | null;
+  exported?: string[];
+  /** Первое видео аккаунта — открыто целиком */
+  trial?: boolean;
   /** no_audio — нет звука, no_speech — речь не найдена, unclear — распознано неуверенно */
   speech?: "no_audio" | "no_speech" | "unclear" | null;
   peaks?: number[];

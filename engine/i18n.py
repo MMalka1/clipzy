@@ -68,8 +68,12 @@ EN = {
 
 # Сообщения с числами и вставками
 PATTERNS = [
-    (re.compile(r"^Во Free — (\d+) видео в сутки\. Следующее — через (\d+) ч\. Или перейдите на Pro без лимитов\.$"),
-     lambda m: f"Free includes {m[1]} videos a day. Next one in {m[2]} h — or go Pro for no limits."),
+    (re.compile(r"^Во Free — (\d+) видео в сутки\. Следующее — через (\d+) ч\. Или перейдите на Pro: до (\d+) видео в день без водяного знака\.$"),
+     lambda m: f"Free includes {m[1]} video a day. Next one in {m[2]} h — or go Pro: up to {m[3]} videos a day, no watermark."),
+    (re.compile(r"^В Pro — до (\d+) видео в сутки\. Следующее — через (\d+) ч\. Без лимита — в Studio\.$"),
+     lambda m: f"Pro includes up to {m[1]} videos a day. Next one in {m[2]} h. Studio has no limit."),
+    (re.compile(r"^Во Free из одного видео можно скачать (\d+) клипа\. Все клипы — в Pro\.$"),
+     lambda m: f"On Free you can download {m[1]} clips per video. All clips are in Pro."),
     (re.compile(r"^Не удалось обработать видео: (.*)$", re.S), lambda m: f"Couldn't process the video: {m[1]}"),
     (re.compile(r"^Файл больше ([\d.]+) ГБ$"), lambda m: f"The file is larger than {m[1]} GB"),
     (re.compile(r"^Во Free — (\d+) экспортов в сутки\. Завтра лимит обновится\.$"),

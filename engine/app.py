@@ -302,7 +302,9 @@ def update(store: dict, key: str, **kw):
 
 
 # ——— пользователи и лимиты ———
-FREE_PER_DAY = 3
+FREE_PER_DAY = 1  # видео в сутки во Free
+PRO_PER_DAY = 8  # и в Pro; Studio и создатель — без лимита
+FREE_EXPORT_CLIPS = 2  # во Free из одного видео можно скачать столько клипов (первое видео — без ограничений)
 GUEST_TOTAL = 1
 GUEST_PER_IP_DAY = 3
 USAGE_FILE = os.path.join(DATA, "usage.json")
@@ -390,6 +392,19 @@ def client_ip(request: Request) -> str:
 
 
 limits_lock = threading.Lock()
+FIRSTS_FILE = os.path.join(DATA, "firsts.json")
+try:
+    with open(FIRSTS_FILE, encoding="utf-8") as _f:
+        firsts: set[str] = set(json.load(_f))
+except (OSError, ValueError):
+    firsts = set()
+
+
+def _save_firsts():
+    tmp = FIRSTS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sorted(firsts), f)
+    os.replace(tmp, FIRSTS_FILE)
 
 
 def reserve(user: dict, ip: str) -> float:
@@ -404,10 +419,24 @@ def reserve(user: dict, ip: str) -> float:
         return now
 
 
-def release(user: dict, ip: str, now: float):
+def first_video(uid: str) -> bool:
+    """Первое видео аккаунта открыто целиком — чтобы человек увидел всё, на что способен сервис."""
+    with limits_lock:
+        if uid in firsts:
+            return False
+        firsts.add(uid)
+        _save_firsts()
+        return True
+
+
+def release(user: dict, ip: str, now: float, trial: bool = False):
     refund_usage(user["uid"], now)
     if user["anon"]:
         refund_usage("ip:" + ip, now)
+    if trial:
+        with limits_lock:
+            firsts.discard(user["uid"])
+            _save_firsts()
 
 
 def check_limits(user: dict, ip: str):
@@ -418,9 +447,12 @@ def check_limits(user: dict, ip: str):
             raise HTTPException(403, "Гостю доступно одно видео. Зарегистрируйтесь — это бесплатно — и загружайте до 3 видео в день.")
         if len([t for t in usage.get("ip:" + ip, []) if now - t < 86400]) >= GUEST_PER_IP_DAY:
             raise HTTPException(429, "С этого устройства уже пробовали. Зарегистрируйтесь, чтобы продолжить.")
-    elif user["plan"] == "free" and len(day) >= FREE_PER_DAY:
+    elif user["plan"] in ("free", "pro") and len(day) >= (FREE_PER_DAY if user["plan"] == "free" else PRO_PER_DAY):
         wait = int((min(day) + 86400 - now) / 3600) + 1
-        raise HTTPException(429, f"Во Free — {FREE_PER_DAY} видео в сутки. Следующее — через {wait} ч. Или перейдите на Pro без лимитов.")
+        if user["plan"] == "free":
+            raise HTTPException(429, f"Во Free — {FREE_PER_DAY} видео в сутки. Следующее — через {wait} ч. "
+                                     f"Или перейдите на Pro: до {PRO_PER_DAY} видео в день без водяного знака.")
+        raise HTTPException(429, f"В Pro — до {PRO_PER_DAY} видео в сутки. Следующее — через {wait} ч. Без лимита — в Studio.")
 
 
 class TooLong(Exception):
@@ -608,14 +640,15 @@ def health():
 async def create_job(file: UploadFile, request: Request, language: str | None = None, user: dict = Depends(current_user)):
     ip = client_ip(request)
     now = reserve(user, ip)
+    trial = first_video(user["uid"])
     try:
-        return await _create_job(file, language, user, ip, now)
+        return await _create_job(file, language, user, ip, now, trial)
     except BaseException:
-        release(user, ip, now)
+        release(user, ip, now, trial)
         raise
 
 
-async def _create_job(file: UploadFile, language: str | None, user: dict, ip: str, now: float):
+async def _create_job(file: UploadFile, language: str | None, user: dict, ip: str, now: float, trial: bool):
     job_id = uuid.uuid4().hex[:12]
     d = os.path.join(DATA, job_id)
     os.makedirs(d)
@@ -642,7 +675,7 @@ async def _create_job(file: UploadFile, language: str | None, user: dict, ip: st
             raise HTTPException(400, too_long_text())
     jobs[job_id] = {"id": job_id, "dir": d, "source": src, "name": file.filename, "status": "queued",
                     "stage": "queued", "progress": 0.0, "created": now, "language": language,
-                    "owner": user["uid"], "ip": ip if user["anon"] else None}
+                    "owner": user["uid"], "ip": ip if user["anon"] else None, "trial": trial}
     save_snapshot(job_id)
     gpu_queue.submit(process_job, job_id)
     return {"id": job_id}
@@ -756,12 +789,13 @@ def create_job_from_url(req: LinkRequest, request: Request, user: dict = Depends
         raise HTTPException(400, "Нужна ссылка на видео с YouTube, VK Видео или Rutube.")
     ip = client_ip(request)
     now = reserve(user, ip)
+    trial = first_video(user["uid"])
     job_id = uuid.uuid4().hex[:12]
     d = os.path.join(DATA, job_id)
     os.makedirs(d)
     jobs[job_id] = {"id": job_id, "dir": d, "source": "", "name": url, "status": "queued", "stage": "download",
                     "progress": 0.0, "created": now, "language": req.language, "owner": user["uid"],
-                    "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None}
+                    "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None, "trial": trial}
     save_snapshot(job_id)
     download_pool.submit(download_job, job_id, url)
     return {"id": job_id}
@@ -820,7 +854,11 @@ def get_job(job_id: str, request: Request, user: dict = Depends(current_user)):
     if changed:  # иначе пересчёт (и заголовки клипов) повторялся бы после каждого перезапуска
         threading.Thread(target=save_snapshot, args=(job_id,), daemon=True).start()
     out["error"] = i18n.tr(out["error"], i18n.lang_of(request.headers))
-    out["sfxKit"] = sfx_kit.public()  # звуки и правила — превью выбирает эффекты так же, как рендер
+    out["sfxKit"] = sfx_kit.public()
+    # Free: из видео можно скачать FREE_EXPORT_CLIPS клипов (какие — решает пользователь); первое видео — все
+    out["exportLimit"] = FREE_EXPORT_CLIPS if user.get("plan", "free") == "free" and not job.get("trial") else None
+    out["exported"] = list(job.get("exported") or [])
+    out["trial"] = bool(job.get("trial"))  # звуки и правила — превью выбирает эффекты так же, как рендер
     # Участников старых проектов считали прежней логикой (путала людей с картинками) — «пополам» им не предлагаем
     if job.get("people_v") != face_track.PEOPLE_VERSION:
         out["speakers"] = None
@@ -899,6 +937,11 @@ def run_render(rid: str):
     except Exception as e:
         traceback.print_exc()
         update(renders, rid, status="error", error="Не удалось собрать клип. Попробуйте ещё раз — если не выйдет, напишите в поддержку.")
+        if r.get("clipKey"):  # клип не собрался — попытку во Free возвращаем
+            with lock:
+                if r["clipKey"] in job.get("exported", []):
+                    job["exported"].remove(r["clipKey"])
+            save_snapshot(r["job"])
 
 
 def save_render(rid: str):
@@ -1007,6 +1050,11 @@ def translate_subtitles(job_id: str, req: TranslateRequest, user: dict = Depends
     return cache[req.target]
 
 
+def clip_key(start: float, end: float) -> str:
+    """Какой клип скачан: начало и конец в десятых секунды (так же считает сайт — Editor.tsx)."""
+    return f"{int(start * 10 + 0.5)}-{int(end * 10 + 0.5)}"
+
+
 @app.post("/jobs/{job_id}/render")
 def create_render(job_id: str, req: RenderRequest, user: dict = Depends(current_user)):
     job = owned_job(job_id, user)
@@ -1025,6 +1073,19 @@ def create_render(job_id: str, req: RenderRequest, user: dict = Depends(current_
             raise HTTPException(429, f"Во Free — {RENDERS_PER_DAY} экспортов в сутки. Завтра лимит обновится.")
     if req.end - req.start < 1 or req.start < 0:
         raise HTTPException(400, "Неверный отрезок")
+    key = None
+    if user.get("plan", "free") == "free" and not job.get("trial"):
+        key = clip_key(req.start, req.end)
+        with lock:
+            done = job.setdefault("exported", [])
+            if key in done:
+                key = None  # этот клип уже скачивали — перерендер в другом стиле не считаем
+            elif len(done) >= FREE_EXPORT_CLIPS:
+                raise HTTPException(403, f"Во Free из одного видео можно скачать {FREE_EXPORT_CLIPS} клипа. Все клипы — в Pro.")
+            else:
+                done.append(key)
+        if key:
+            save_snapshot(job_id)
     for c in (req.accent, req.textColor):
         if c is not None and not HEX.match(c):
             raise HTTPException(400, "Цвет в формате #RRGGBB")
@@ -1040,7 +1101,7 @@ def create_render(job_id: str, req: RenderRequest, user: dict = Depends(current_
     workdir = os.path.join(job["dir"], "render_" + rid)
     renders[rid] = {"id": rid, "job": job_id, "status": "queued", "progress": 0.0, "workdir": workdir,
                     "file": os.path.join(job["dir"], f"clip_{rid}.mp4"), "request": req.model_dump(),
-                    "owner": user["uid"]}
+                    "owner": user["uid"], "clipKey": key}
     if RENDERS_PER_DAY:
         record_usage("r:" + user["uid"])
     render_queue.submit(run_render, rid)
