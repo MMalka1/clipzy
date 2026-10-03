@@ -4,14 +4,14 @@ import type { Dict } from "../config";
 const ru = {
   plan: {
     guest: "Гость · 1 видео",
-    free: "Free · 3 видео в день",
+    free: "Free · 1 видео в день",
   },
 };
 
 const en: typeof ru = {
   plan: {
     guest: "Guest · 1 video",
-    free: "Free · 3 videos a day",
+    free: "Free · 1 video a day",
   },
 };
 

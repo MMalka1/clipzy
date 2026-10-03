@@ -273,6 +273,8 @@ ANNOTATED = 4  # версия разметки: при изменении лог
 def annotate(job: dict) -> bool:
     """Помечаем слова-паразиты и ключевые слова, строим монтажный план, меряем громкость голоса (один раз).
     True — разметку пересчитали (проект стоит сохранить)."""
+    if isinstance(job.get("plan"), str):  # проекты до исправления: тариф лежал в поле монтажного плана
+        job.setdefault("tier", job.pop("plan"))
     if (job.get("annotated") == ANNOTATED and (job.get("plan") or {}).get("v") == edit_plan.PLAN_VERSION) or not job.get("phrases"):
         return False
     words = [w for p in job["phrases"] for w in p["words"]]
@@ -444,7 +446,7 @@ def check_limits(user: dict, ip: str):
     day = [t for t in usage.get(user["uid"], []) if now - t < 86400]
     if user["anon"]:
         if len(usage.get(user["uid"], [])) >= GUEST_TOTAL:
-            raise HTTPException(403, "Гостю доступно одно видео. Зарегистрируйтесь — это бесплатно — и загружайте до 3 видео в день.")
+            raise HTTPException(403, "Гостю доступно одно видео. Зарегистрируйтесь — это бесплатно: новое видео каждый день и скачивание клипов.")
         if len([t for t in usage.get("ip:" + ip, []) if now - t < 86400]) >= GUEST_PER_IP_DAY:
             raise HTTPException(429, "С этого устройства уже пробовали. Зарегистрируйтесь, чтобы продолжить.")
     elif user["plan"] in ("free", "pro") and len(day) >= (FREE_PER_DAY if user["plan"] == "free" else PRO_PER_DAY):
@@ -550,7 +552,7 @@ def process_job(job_id: str):
 
         update(jobs, job_id, stage="highlights", progress=0.8, language=language)
         # Studio и создатель — до 24 клипов из видео, остальные — до 8
-        limit = 24 if job.get("plan") in ("studio", "creator") else 8
+        limit = 24 if job.get("tier") in ("studio", "creator") else 8
         hl = find_highlights(words, wav, limit=limit) if words else []
 
         update(jobs, job_id, stage="face", progress=0.82)
@@ -678,7 +680,7 @@ async def _create_job(file: UploadFile, language: str | None, user: dict, ip: st
     jobs[job_id] = {"id": job_id, "dir": d, "source": src, "name": file.filename, "status": "queued",
                     "stage": "queued", "progress": 0.0, "created": now, "language": language,
                     "owner": user["uid"], "ip": ip if user["anon"] else None, "trial": trial,
-                    "plan": user.get("plan", "free")}
+                    "tier": user.get("plan", "free")}  # не "plan": это поле — монтажный план (edit_plan)
     save_snapshot(job_id)
     gpu_queue.submit(process_job, job_id)
     return {"id": job_id}
@@ -799,7 +801,7 @@ def create_job_from_url(req: LinkRequest, request: Request, user: dict = Depends
     jobs[job_id] = {"id": job_id, "dir": d, "source": "", "name": url, "status": "queued", "stage": "download",
                     "progress": 0.0, "created": now, "language": req.language, "owner": user["uid"],
                     "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None, "trial": trial,
-                    "plan": user.get("plan", "free")}
+                    "tier": user.get("plan", "free")}
     save_snapshot(job_id)
     download_pool.submit(download_job, job_id, url)
     return {"id": job_id}

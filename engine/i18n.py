@@ -9,8 +9,8 @@ import re
 EN = {
     "Сессия истекла — обновите страницу": "Your session expired — refresh the page",
     "Проект не найден": "Project not found",
-    "Гостю доступно одно видео. Зарегистрируйтесь — это бесплатно — и загружайте до 3 видео в день.":
-        "Guests get one video. Sign up — it's free — to upload up to 3 videos a day.",
+    "Гостю доступно одно видео. Зарегистрируйтесь — это бесплатно: новое видео каждый день и скачивание клипов.":
+        "Guests get one video. Sign up — it's free — for a new video every day and clip downloads.",
     "С этого устройства уже пробовали. Зарегистрируйтесь, чтобы продолжить.":
         "This device has already used its free try. Sign up to continue.",
     "Не удалось прочитать видео: файл повреждён или этот формат не поддерживается. Попробуйте MP4 или MOV.":

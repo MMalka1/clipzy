@@ -73,6 +73,7 @@ import { type ClipSfx3, type SfxCtx, clipSfx3, cueGaps } from "@/lib/sfx";
 import Inspector, { DEFAULT_SETTINGS, type Settings } from "./Inspector";
 import Preview, { previewWidth } from "./Preview";
 import BuyPro from "@/components/BuyPro";
+import LogoSting from "@/components/LogoSting";
 import PlanBadge, { isPaidPlan } from "@/components/PlanBadge";
 import { useLocale } from "@/i18n/client";
 import editor from "@/i18n/dict/editor";
@@ -1187,6 +1188,7 @@ export default function Editor() {
         <TopBar user={user} />
         <div className="flex flex-1 items-center justify-center px-5">
           <div className="w-full max-w-sm">
+            <LogoSting variant="wide" className="mb-7 aspect-video w-full rounded-xl border border-line-strong" />
             <p className="font-mono text-xs text-faint">{t.processing(Math.round(overall * 100))}</p>
             <h2 className="mt-2 truncate text-xl font-medium">{fileName}</h2>
             {first && firstP === 0 && (wake?.state === "installing" || wake?.state === "starting") && <WakePanel wake={wake} />}
@@ -1657,6 +1659,13 @@ function ExportDialog({
         {busy && (
           <>
             <p className="mt-1 text-sm text-dim">{t.renderSpec}</p>
+            {/* Пока клип собирается — заставка в той же рамке, где он потом появится */}
+            <LogoSting
+              variant={aspect === "16:9" ? "wide" : "tall"}
+              className={`mx-auto mt-4 rounded-lg ${
+                aspect === "16:9" ? "aspect-video w-full" : aspect === "1:1" ? "aspect-square w-full max-w-[52vh]" : "aspect-[9/16] h-[52vh] max-w-full"
+              }`}
+            />
             <div className="mt-6 h-1 overflow-hidden rounded bg-line">
               <div className="h-full bg-signal transition-[width] duration-300" style={{ width: `${render.progress * 100}%` }} />
             </div>

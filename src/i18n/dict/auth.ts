@@ -6,7 +6,7 @@ const ru = {
   login: {
     welcomeBack: "С возвращением",
     signupTitle: "Нарезайте рилсы бесплатно",
-    sub: "3 видео в день на Free — без карты.",
+    sub: "1 видео в день на Free — без карты.",
     verified: "Почта подтверждена ✓",
   },
   form: {
@@ -77,7 +77,7 @@ const en: typeof ru = {
   login: {
     welcomeBack: "Welcome back",
     signupTitle: "Clip reels for free",
-    sub: "3 videos a day on Free — no card needed.",
+    sub: "1 video a day on Free — no card needed.",
     verified: "Email confirmed ✓",
   },
   form: {
