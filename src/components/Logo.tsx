@@ -1,5 +1,22 @@
 import Link from "next/link";
-import { ICON_Z, STICKER, WORDMARK, WORDMARK_CLIP, WORDMARK_ZY } from "./brand-paths";
+import { ICON_Z, STICKER, WORDMARK, WORDMARK_CLIP, WORDMARK_PLAY, WORDMARK_ZY_LETTERS } from "./brand-paths";
+
+/**
+ * «zy», «play» и плейхед — отдельными слоями: внутри ссылки с классом logo-hover на наведении логотип
+ * проигрывается как заставка «clip → clipzy» (анимация — в globals.css, .lz-*).
+ */
+function Animated({ zy }: { zy: string }) {
+  return (
+    <>
+      <path className="lz-zy" d={WORDMARK_ZY_LETTERS} fill={zy} fillRule="evenodd" />
+      <path className="lz-play" d={WORDMARK_PLAY} fill={zy} fillRule="evenodd" />
+      <g className="lz-head">
+        <rect x={-90} width={90} height={STICKER.h} fill="#F9DC0C" opacity={0.28} />
+        <rect x={-3} width={6} height={STICKER.h} fill="#F9DC0C" />
+      </g>
+    </>
+  );
+}
 
 /** Надпись clipzy: «clip» цветом текста (currentColor), «zy» — фирменный жёлтый. */
 export function Wordmark({ className = "h-6" }: { className?: string }) {
@@ -11,7 +28,7 @@ export function Wordmark({ className = "h-6" }: { className?: string }) {
       aria-label="clipzy"
     >
       <path d={WORDMARK_CLIP} fill="currentColor" fillRule="evenodd" />
-      <path d={WORDMARK_ZY} fill="#F9DC0C" fillRule="evenodd" />
+      <Animated zy="#F9DC0C" />
     </svg>
   );
 }
@@ -44,7 +61,7 @@ export function Sticker({ className = "h-9", style }: { className?: string; styl
     >
       <rect width={STICKER.w} height={STICKER.h} rx={STICKER.rx} fill="#0B0B0B" />
       <path d={WORDMARK_CLIP} fill="#F4EFE6" fillRule="evenodd" />
-      <path d={WORDMARK_ZY} fill="#F9DC0C" fillRule="evenodd" />
+      <Animated zy="#F9DC0C" />
     </svg>
   );
 }
@@ -55,7 +72,7 @@ export default function Logo({ size = "md", label = "Clipzy" }: { size?: "sm" | 
     <Link
       href="/"
       aria-label={label}
-      className="inline-flex shrink-0 transition-transform hover:-rotate-2"
+      className="logo-hover inline-flex shrink-0 transition-transform hover:-rotate-2"
     >
       <Sticker className={size === "sm" ? "h-7" : "h-8 sm:h-10"} />
     </Link>

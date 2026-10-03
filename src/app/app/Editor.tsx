@@ -177,6 +177,7 @@ export default function Editor() {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [outro, setOutro] = useState(false); // концовка-логотип играет поверх превью
   const [scale, setScale] = useState(1);
   const [render, setRender] = useState<RenderState | null>(null);
 
@@ -692,6 +693,8 @@ export default function Editor() {
     loadSfx([...new Set(sfxEvents.map((e) => e.type))]);
   }, [sfxEvents, loadSfx]);
 
+  // «Добавить водяной знак» на платном тарифе: в готовом видео после клипа — концовка-логотип со звуком
+  const outroOn = s.badge && isPaidPlan(user?.plan, user?.anon);
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -707,6 +710,13 @@ export default function Editor() {
         // Перемотка встаёт на ближайший кадр — бывает чуть раньше точки. Пару кадров до начала куска считаем «внутри»,
         // а прыгаем чуть дальше начала: иначе превью застревало, снова и снова прыгая в одно и то же место
         const SNAP = 0.08;
+        if (t >= last.end && outroOn) {
+          // Как в готовом видео: после клипа — концовка, затем клип сначала
+          v.pause();
+          v.currentTime = intervals[0].start + 0.02;
+          setOutro(true);
+          return;
+        }
         if (t >= last.end || t < intervals[0].start - 0.5) {
           v.currentTime = t = intervals[0].start + 0.02;
         } else if (!intervals.some((r) => t >= r.start - SNAP && t <= r.end)) {
@@ -742,7 +752,19 @@ export default function Editor() {
       cancelAnimationFrame(raf);
       stopSfx();
     };
-  }, [playing, intervals, sfxEvents, playSfx, stopSfx]);
+  }, [playing, intervals, sfxEvents, playSfx, stopSfx, outroOn]);
+
+  // Видео доиграло до самого конца (режим «всё видео») — концовка тоже, потом с начала
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !outroOn) return;
+    const onEnded = () => {
+      v.currentTime = intervals[0]?.start ?? 0;
+      setOutro(true);
+    };
+    v.addEventListener("ended", onEnded);
+    return () => v.removeEventListener("ended", onEnded);
+  }, [outroOn, intervals, stage, videoUrl]);
 
   // Масштаб оверлеев превью под фактический размер кадра
   useEffect(() => {
@@ -756,6 +778,7 @@ export default function Editor() {
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
+    setOutro(false);
     if (v.paused) {
       ensureAudio();
       // Пауза сразу после запуска (двойной клик, смена клипа) прерывает play() — это не ошибка
@@ -766,6 +789,7 @@ export default function Editor() {
   function seek(t: number) {
     const v = videoRef.current;
     if (!v) return;
+    setOutro(false);
     v.currentTime = Math.max(0, Math.min(t, duration || t));
     setTime(v.currentTime);
   }
@@ -1244,7 +1268,7 @@ export default function Editor() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden max-lg:h-auto max-lg:min-h-dvh max-lg:overflow-visible">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-3 sm:px-4">
-        <Link href="/" aria-label={t.home} className="transition-opacity hover:opacity-85">
+        <Link href="/" aria-label={t.home} className="logo-hover transition-opacity hover:opacity-85">
           <Wordmark className="h-[18px]" />
         </Link>
         <span className="h-4 w-px bg-line" aria-hidden="true" />
@@ -1496,7 +1520,19 @@ export default function Editor() {
                 emoji={s.emoji}
                 scale={scale}
                 watermark={!isPaidPlan(user?.plan, user?.anon) || s.badge}
-              />
+              >
+                {outro && (
+                  <video
+                    src={`/demo/outro-${s.aspect === "16:9" ? "wide" : "tall"}.mp4`}
+                    autoPlay
+                    playsInline
+                    onEnded={togglePlay}
+                    onError={togglePlay}
+                    onClick={togglePlay}
+                    className="absolute inset-0 z-10 h-full w-full cursor-pointer bg-[#e7dfd3] object-cover"
+                  />
+                )}
+              </Preview>
             )}
           </div>
         </section>
@@ -1789,7 +1825,7 @@ function TopBar({ user }: { user: EngineUser | null }) {
   const t = editor[useLocale()];
   return (
     <header className="flex h-14 items-center justify-between border-b border-line px-5">
-      <Link href="/" aria-label={t.home} className="flex items-center gap-2.5 text-sm text-dim transition-colors hover:text-fg">
+      <Link href="/" aria-label={t.home} className="logo-hover flex items-center gap-2.5 text-sm text-dim transition-colors hover:text-fg">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         <Wordmark className="h-5" />
       </Link>

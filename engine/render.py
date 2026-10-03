@@ -17,6 +17,10 @@ from emoji_map import phrase_emoji
 from captions_render import H, W, canvas_of, region_h, region_top, render_caption, render_hook, render_watermark
 
 
+BRAND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brand")
+OUTRO_LEN = 5.0  # концовка-логотип «clip → clipzy» со звуком: brand/outro_9x16.mp4 и outro_16x9.mp4
+
+
 # ——— FFmpeg ———
 @lru_cache(maxsize=4)
 def tool(name: str) -> str:
@@ -416,6 +420,12 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         audio_fx.build_music_track(music_path, tool("ffmpeg"), total, speech if audio else [], vol, music_wav)
         inputs += ["-i", music_wav]
         music_idx, idx = idx, idx + 1
+    # Концовка-логотип со звуком — вместе с водяным знаком по кнопке в редакторе (на платных тарифах)
+    outro_idx = None
+    if req.get("badge"):
+        inputs += ["-i", os.path.join(BRAND, "outro_16x9.mp4" if OW > OH else "outro_9x16.mp4")]
+        outro_idx, idx = idx, idx + 1
+    full = total + (OUTRO_LEN if outro_idx is not None else 0.0)
 
     f = []
     for k, (a, b) in enumerate(local):
@@ -477,7 +487,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
     if req.get("progressBar"):
         f.append(f"[{last}]drawbox=x=0:y=ih-14:w='iw*t/{total:.3f}':h=14:color=0xFFD60A@0.95:t=fill[vp]")
         last = "vp"
-    f.append(f"[{last}]format=yuv420p[vout]")
+    f.append(f"[{last}]format=yuv420p[{'vmain' if outro_idx is not None else 'vout'}]")
 
     # Звук: голос + музыка (приглушается, когда говорят) + эффекты
     fmt = "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo"
@@ -496,20 +506,33 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
         f.append("".join(f"[{m}]" for m in mix) + f"amix=inputs={len(mix)}:normalize=0:duration=first,{limiter()}[aout]")
     elif mix:
         f.append(f"[{mix[0]}]anull[aout]")
+    aout = "aout"
+    if outro_idx is not None:
+        # Клип ровно total секунд (звук — тишиной, если его нет), следом концовка; квадрат — центр вертикальной
+        if has_out_audio:
+            f.append(f"[aout]apad,atrim=duration={total:.3f},afade=t=out:st={max(total - 0.12, 0):.3f}:d=0.12[amain]")
+        else:
+            f.append(f"anullsrc=r=44100:cl=stereo,atrim=duration={total:.3f}[amain]")
+        f.append(f"[vmain]fps=30,trim=duration={total:.3f},setpts=PTS-STARTPTS,setsar=1[vm]")
+        f.append(f"[{outro_idx}:v]fps=30,scale={OW}:{OH}:force_original_aspect_ratio=increase,crop={OW}:{OH},"
+                 f"setsar=1,format=yuv420p[vo]")
+        f.append(f"[{outro_idx}:a]{fmt},volume=0.85[ao]")
+        f.append("[vm][amain][vo][ao]concat=n=2:v=1:a=1[vout][aend]")
+        aout, has_out_audio = "aend", True
 
     def encode(nvenc: bool):
         vcodec = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "0"] if nvenc
                   else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"])
         cmd = [tool("ffmpeg"), "-y", "-v", "error", *inputs, "-filter_complex", ";".join(f),
-               "-map", "[vout]", *(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"] if has_out_audio else []),
-               *vcodec, "-r", "30", "-t", f"{total:.3f}", "-movflags", "+faststart",
+               "-map", "[vout]", *(["-map", f"[{aout}]", "-c:a", "aac", "-b:a", "192k"] if has_out_audio else []),
+               *vcodec, "-r", "30", "-t", f"{full:.3f}", "-movflags", "+faststart",
                "-progress", "pipe:1", "-nostats", out_path]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding="utf-8", errors="replace")
         for line in proc.stdout:  # type: ignore[union-attr]
             if line.startswith("out_time_us=") or line.startswith("out_time_ms="):
                 try:
-                    on_progress(min(int(line.split("=")[1]) / 1e6 / total, 1.0))
+                    on_progress(min(int(line.split("=")[1]) / 1e6 / full, 1.0))
                 except ValueError:
                     pass
         err = proc.stderr.read()  # type: ignore[union-attr]
@@ -522,7 +545,7 @@ def render_clip(src: str, meta: dict, words: list[dict], req: dict, workdir: str
     if code != 0:
         raise RuntimeError(err.strip()[-800:] or "FFmpeg завершился с ошибкой")
     on_progress(1.0)
-    return {"duration": round(total, 2), "intervals": intervals}
+    return {"duration": round(full, 2), "intervals": intervals}
 
 
 # ——— обложка ———

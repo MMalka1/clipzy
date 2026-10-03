@@ -1703,3 +1703,76 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Логотип на наведении — как заставка «clip → clipzy»: «zy» выскакивает, «play» падает сверху,
+   по наклейке проходит плейхед, в конце жёлтая вспышка. Слои — в components/Logo.tsx */
+.lz-zy,
+.lz-play {
+  transform-box: fill-box;
+}
+.lz-zy {
+  transform-origin: 0% 70%;
+}
+.lz-play {
+  transform-origin: 50% 100%;
+}
+.lz-head {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .logo-hover:is(:hover, :focus-visible) .lz-zy {
+    animation: lz-zy 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .logo-hover:is(:hover, :focus-visible) .lz-play {
+    animation: lz-play 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+  }
+  .logo-hover:is(:hover, :focus-visible) .lz-head {
+    animation: lz-head 0.65s cubic-bezier(0.45, 0, 0.55, 1) 0.5s both;
+  }
+  .logo-hover:is(:hover, :focus-visible) svg {
+    animation: lz-glow 1.2s ease-out 1s both;
+  }
+}
+@keyframes lz-zy {
+  0% {
+    opacity: 0;
+    transform: translateX(-14%) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lz-play {
+  0% {
+    opacity: 0;
+    transform: translateY(-140%) rotate(-40deg) scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lz-head {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  12%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(1047px);
+  }
+}
+@keyframes lz-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 rgb(249 220 12 / 0));
+  }
+  30% {
+    filter: drop-shadow(0 0 9px rgb(249 220 12 / 0.75));
+  }
+}

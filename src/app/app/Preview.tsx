@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { Sticker } from "@/components/Logo";
 import type { Panel, Phrase } from "@/lib/engine";
@@ -72,6 +72,7 @@ export default function Preview({
   split = null,
   canvas = { w: 1080, h: 1920 },
   watermark = true,
+  children,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   videoUrl: string;
@@ -105,6 +106,8 @@ export default function Preview({
   canvas?: { w: number; h: number };
   /** Во Free водяной знак есть в итоговом видео — показываем и в превью */
   watermark?: boolean;
+  /** Поверх всего кадра — концовка-логотип */
+  children?: ReactNode;
 }) {
   const t = inspector[useLocale()].preview;
   const bgRef = useRef<HTMLVideoElement>(null);
@@ -258,6 +261,7 @@ export default function Preview({
           <Play className="ml-0.5 h-6 w-6 fill-white text-white" aria-hidden="true" />
         </button>
       )}
+      {children}
     </div>
   );
 }
