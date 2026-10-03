@@ -149,11 +149,11 @@ export default async function Home() {
 
           <div className="hero-reels relative mx-auto h-[440px] w-full max-w-[330px] sm:h-[548px] sm:max-w-[400px]">
             <div className="reel-slot drop-in absolute left-0 top-6 w-[58%] -rotate-[5deg]" style={cssVars({ "--drop": "120ms" })}>
-              <span className="tape -top-3 left-8 -rotate-6" aria-hidden="true" />
+              <span className="tape tape-stick -top-3 left-8 -rotate-6" style={cssVars({ "--tape-d": "780ms" })} aria-hidden="true" />
               <DemoReel {...reel(1)} label={t.hero.reel1Label} slate={t.hero.slate1} />
             </div>
             <div className="reel-slot drop-in absolute right-0 top-20 w-[54%] rotate-[4deg]" style={cssVars({ "--drop": "300ms" })}>
-              <span className="tape -top-3 right-6 rotate-3" aria-hidden="true" />
+              <span className="tape tape-stick -top-3 right-6 rotate-3" style={cssVars({ "--tape-d": "1000ms" })} aria-hidden="true" />
               <DemoReel {...reel(3)} label={t.hero.reel3Label} slate={t.hero.slate3} />
             </div>
             <div className="absolute -bottom-4 left-4 flex items-end gap-1 text-dim">
