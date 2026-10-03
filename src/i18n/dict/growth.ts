@@ -16,7 +16,7 @@ const ru = {
     periods: { month: "Месяц", forever: "Навсегда" },
     price: { pro: "990 ₽ за 30 дней", studio: "2 490 ₽ за 30 дней", studio_forever: "9 900 ₽ навсегда" },
     perks: {
-      pro: "Водяной знак выключается, до 8 видео в день, все клипы",
+      pro: "Без водяного знака, до 8 видео в день, все клипы",
       studio: "Без лимитов, до 24 клипов из видео, новые функции Studio — по мере выхода",
       studio_forever: "Всё из Studio без подписки — один платёж",
     },
@@ -141,7 +141,7 @@ const en: typeof ru = {
     periods: { month: "Month", forever: "Forever" },
     price: { pro: "990 ₽ for 30 days", studio: "2 490 ₽ for 30 days", studio_forever: "9 900 ₽ forever" },
     perks: {
-      pro: "Watermark can be switched off, up to 8 videos a day, every clip",
+      pro: "No watermark, up to 8 videos a day, every clip",
       studio: "No limits, up to 24 clips per video, new Studio features as they ship",
       studio_forever: "Everything in Studio, no subscription — one payment",
     },

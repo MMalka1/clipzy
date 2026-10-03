@@ -89,8 +89,8 @@ const ru = {
     off: "Выключен",
     free: "Слева и справа · Free",
     remove: "Убрать в Pro",
-    badge: "«Сделано в Clipzy» внизу",
-    badgeHint: "Маленький логотип по центру внизу. Не нужен — выключите",
+    badge: "Добавить водяной знак",
+    badgeHint: "Маленький логотип «Clipzy» по центру внизу — если хотите рассказать о нас зрителям",
   },
   preview: {
     play: "Воспроизвести",
@@ -185,8 +185,8 @@ const en: typeof ru = {
     off: "Off",
     free: "Left and right · Free",
     remove: "Remove with Pro",
-    badge: "“Made with Clipzy” at the bottom",
-    badgeHint: "A small logo centered at the bottom. Don't want it? Switch it off",
+    badge: "Add a watermark",
+    badgeHint: "A small Clipzy logo centered at the bottom — if you'd like to tell your viewers about us",
   },
   preview: {
     play: "Play",
