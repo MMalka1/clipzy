@@ -173,16 +173,16 @@ const ru = {
   pricing: {
     title: "Сколько стоит",
     mark: "стоит",
-    lead: "Бесплатный план — сразу и без карты. Pro без водяного знака можно купить уже сейчас, Studio откроем следом.",
+    lead: "Бесплатный план — сразу и без карты. Pro и Studio можно купить уже сейчас, оплата по СБП.",
     plans: [
       { name: "Попробовать", price: "0\u00a0₽", note: "1 видео в день, скачать 2 клипа из видео, водяной знак по краям", status: "работает сейчас", now: true, featured: false },
       { name: "Pro", price: "990\u00a0₽ / мес", note: "без водяного знака, до 8 видео в день и 300 минут в месяц, все клипы", status: "можно купить", now: true, featured: true },
       {
         name: "Studio",
         price: "2\u00a0490\u00a0₽ / мес",
-        note: "без лимитов, до 24 клипов из видео, ИИ-тексты к каждому клипу, всё пачкой. Или навсегда за 9\u00a0900\u00a0₽ — без подписки",
-        status: "скоро",
-        now: false,
+        note: "без лимитов, до 24 клипов из видео, ИИ-тексты и выгрузка пачкой — скоро. Или навсегда за 9\u00a0900\u00a0₽ — без подписки",
+        status: "можно купить",
+        now: true,
         featured: false,
       },
     ],
@@ -433,16 +433,16 @@ const en: typeof ru = {
   pricing: {
     title: "What it'll cost",
     mark: "cost",
-    lead: "The free plan works right away, no card. Pro without the watermark is available now; Studio comes next.",
+    lead: "The free plan works right away, no card. Pro and Studio are available now, paid via SBP.",
     plans: [
       { name: "Free", price: "$0", note: "1 video a day, download 2 clips per video, watermark on the edges", status: "live now", now: true, featured: false },
       { name: "Pro", price: "$15 / mo", note: "no watermark, up to 8 videos a day and 300 minutes a month, every clip", status: "available now", now: true, featured: true },
       {
         name: "Studio",
         price: "$39 / mo",
-        note: "no limits, up to 24 clips per video, AI captions for every clip, batch download. Or $149 once, no subscription",
-        status: "coming soon",
-        now: false,
+        note: "no limits, up to 24 clips per video; AI captions and batch download coming soon. Or $149 once, no subscription",
+        status: "available now",
+        now: true,
         featured: false,
       },
     ],

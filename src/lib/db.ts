@@ -543,7 +543,18 @@ export async function listPayments(limit = 30): Promise<(Payment & { email: stri
  * Оплаченный тариф на days дней. Если такой же тариф ещё действует — продлеваем от его конца, иначе от сейчас.
  * Создателя и бессрочный платный тариф не трогаем.
  */
-export async function grantPaidPlan(userId: string, plan: string, days: number): Promise<Date | null> {
+export async function grantPaidPlan(userId: string, plan: string, days: number): Promise<Date | "forever" | null> {
+  if (days <= 0) {
+    // Навсегда: тариф без срока. Создателя не трогаем
+    if (pg) {
+      const r = await pg.query(`update "user" set plan = $1, "planUntil" = null, "updatedAt" = now() where id = $2 and plan <> 'creator'`, [plan, userId]);
+      return (r.rowCount ?? 0) > 0 ? "forever" : null;
+    }
+    const r = localDb()
+      .prepare(`update "user" set plan = ?, "planUntil" = null, "updatedAt" = ? where id = ? and plan <> 'creator'`)
+      .run(plan, new Date().toISOString(), userId);
+    return Number(r.changes) > 0 ? "forever" : null;
+  }
   if (pg) {
     const r = await pg.query(
       `update "user" set plan = $1,

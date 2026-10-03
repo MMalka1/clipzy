@@ -25,6 +25,8 @@ export default async function PaySuccess({ searchParams }: PageProps<"/pay/succe
   const paid = mine?.status === "paid";
   const plan = user ? effectivePlan(user) : "free";
   const until = paid && plan !== "free" && user?.planUntil ? new Date(user.planUntil) : null;
+  const forever = paid && plan !== "free" && plan !== "creator" && !user?.planUntil;
+  const planName = plan[0].toUpperCase() + plan.slice(1);
   const date = until
     ? new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-US", { day: "numeric", month: "long", year: "numeric" }).format(until)
     : null;
@@ -37,7 +39,7 @@ export default async function PaySuccess({ searchParams }: PageProps<"/pay/succe
       </header>
       <div className="mx-auto w-full max-w-xl flex-1 px-5 pt-10">
         <h1 className="text-[34px] font-extrabold leading-tight tracking-[-0.03em]">{t.successTitle}</h1>
-        <p className="mt-4 text-[18px] leading-relaxed text-dim">{date ? t.active(date) : t.waiting}</p>
+        <p className="mt-4 text-[18px] leading-relaxed text-dim">{forever ? t.forever(planName) : date ? t.active(planName, date) : t.waiting}</p>
         {mine && !paid && <Refresh />}
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/app" className="inline-flex h-12 items-center rounded-xl bg-signal px-6 font-bold text-[#17140f] shadow-[0_3px_0_#17140f]">

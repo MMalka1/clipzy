@@ -549,7 +549,9 @@ def process_job(job_id: str):
             update(jobs, job_id, device=transcribe.device_in_use)
 
         update(jobs, job_id, stage="highlights", progress=0.8, language=language)
-        hl = find_highlights(words, wav) if words else []
+        # Studio и создатель — до 24 клипов из видео, остальные — до 8
+        limit = 24 if job.get("plan") in ("studio", "creator") else 8
+        hl = find_highlights(words, wav, limit=limit) if words else []
 
         update(jobs, job_id, stage="face", progress=0.82)
         track_for(job, on_progress=lambda p: update(jobs, job_id, progress=0.82 + 0.17 * p), words=words)
@@ -675,7 +677,8 @@ async def _create_job(file: UploadFile, language: str | None, user: dict, ip: st
             raise HTTPException(400, too_long_text())
     jobs[job_id] = {"id": job_id, "dir": d, "source": src, "name": file.filename, "status": "queued",
                     "stage": "queued", "progress": 0.0, "created": now, "language": language,
-                    "owner": user["uid"], "ip": ip if user["anon"] else None, "trial": trial}
+                    "owner": user["uid"], "ip": ip if user["anon"] else None, "trial": trial,
+                    "plan": user.get("plan", "free")}
     save_snapshot(job_id)
     gpu_queue.submit(process_job, job_id)
     return {"id": job_id}
@@ -795,7 +798,8 @@ def create_job_from_url(req: LinkRequest, request: Request, user: dict = Depends
     os.makedirs(d)
     jobs[job_id] = {"id": job_id, "dir": d, "source": "", "name": url, "status": "queued", "stage": "download",
                     "progress": 0.0, "created": now, "language": req.language, "owner": user["uid"],
-                    "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None, "trial": trial}
+                    "url": url, "rights_confirmed": now, "ip": ip if user["anon"] else None, "trial": trial,
+                    "plan": user.get("plan", "free")}
     save_snapshot(job_id)
     download_pool.submit(download_job, job_id, url)
     return {"id": job_id}

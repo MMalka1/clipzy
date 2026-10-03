@@ -12,8 +12,17 @@ const planName = (plan: string) => (plan ? plan[0].toUpperCase() + plan.slice(1)
 
 const ru = {
   pay: {
-    buy: "Купить Pro — 990 ₽ за 30 дней",
+    plans: { pro: "Pro", studio: "Studio" },
+    periods: { month: "Месяц", forever: "Навсегда" },
+    price: { pro: "990 ₽ за 30 дней", studio: "2 490 ₽ за 30 дней", studio_forever: "9 900 ₽ навсегда" },
+    perks: {
+      pro: "Без водяного знака, до 8 видео в день, все клипы",
+      studio: "Без лимитов, до 24 клипов из видео, новые функции Studio — по мере выхода",
+      studio_forever: "Всё из Studio без подписки — один платёж",
+    },
+    buy: (plan: string) => `Купить ${plan}`,
     note: "Оплата по СБП через Platega. Повторная покупка продлевает срок.",
+    already: "У вас уже тариф навсегда — покупать ничего не нужно",
     login: "Войдите или зарегистрируйтесь — Pro включится на ваш аккаунт",
     soon: "Оплата откроется совсем скоро",
     tooMany: "Слишком много попыток. Попробуйте через час.",
@@ -21,7 +30,8 @@ const ru = {
     going: "Открываем оплату…",
     successTitle: "Спасибо! Оплата принята",
     waiting: "Ждём подтверждения от банка — обычно это меньше минуты. Страница обновится сама.",
-    active: (date: string) => `Pro включён до ${date}`,
+    active: (plan: string, date: string) => `${plan} включён до ${date}`,
+    forever: (plan: string) => `${plan} включён навсегда`,
     toEditor: "В редактор",
     toProfile: "Профиль",
     failTitle: "Оплата не прошла",
@@ -123,8 +133,17 @@ const ru = {
 
 const en: typeof ru = {
   pay: {
-    buy: "Buy Pro — 990 ₽ for 30 days",
+    plans: { pro: "Pro", studio: "Studio" },
+    periods: { month: "Month", forever: "Forever" },
+    price: { pro: "990 ₽ for 30 days", studio: "2 490 ₽ for 30 days", studio_forever: "9 900 ₽ forever" },
+    perks: {
+      pro: "No watermark, up to 8 videos a day, every clip",
+      studio: "No limits, up to 24 clips per video, new Studio features as they ship",
+      studio_forever: "Everything in Studio, no subscription — one payment",
+    },
+    buy: (plan: string) => `Buy ${plan}`,
     note: "Paid in rubles via SBP (Platega). Buying again extends the term.",
+    already: "You already have a lifetime plan — nothing to buy",
     login: "Sign in or sign up — Pro will be added to your account",
     soon: "Payments open very soon",
     tooMany: "Too many attempts. Try again in an hour.",
@@ -132,7 +151,8 @@ const en: typeof ru = {
     going: "Opening payment…",
     successTitle: "Thank you! Payment received",
     waiting: "Waiting for the bank to confirm — usually under a minute. This page refreshes itself.",
-    active: (date: string) => `Pro is on until ${date}`,
+    active: (plan: string, date: string) => `${plan} is on until ${date}`,
+    forever: (plan: string) => `${plan} is on forever`,
     toEditor: "Open the editor",
     toProfile: "Profile",
     failTitle: "Payment didn't go through",

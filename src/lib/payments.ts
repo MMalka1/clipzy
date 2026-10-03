@@ -18,9 +18,11 @@ import {
  */
 const API = process.env.PLATEGA_API || "https://app.platega.io"; // PLATEGA_API — только для проверки на заглушке
 
-/** Что можно купить. Studio и «навсегда» откроем, когда будут свой шрифт, логотип и выгрузка пачкой. */
+/** Что можно купить. days: 0 — навсегда. */
 export const OFFERS = {
   pro: { plan: "pro", days: 30, amount: 990, title: "Clipzy Pro на 30 дней" },
+  studio: { plan: "studio", days: 30, amount: 2490, title: "Clipzy Studio на 30 дней" },
+  studio_forever: { plan: "studio", days: 0, amount: 9900, title: "Clipzy Studio навсегда" },
 } as const;
 export type OfferKey = keyof typeof OFFERS;
 
@@ -53,11 +55,21 @@ export async function startPayment(userId: string, key: OfferKey): Promise<strin
     }),
     signal: AbortSignal.timeout(15_000),
   });
-  const data = (await res.json().catch(() => null)) as { transactionId?: string; redirect?: string } | null;
+  const data = (await res.json().catch(() => null)) as
+    | { transactionId?: string; redirect?: string; status?: string; paymentMethod?: unknown }
+    | null;
+  // Для разбора проблем: что ответила Platega (без ключей) и какой у транзакции статус сразу после создания
+  console.info(
+    `[pay] создание: http ${res.status}, статус ${data?.status}, метод ${JSON.stringify(data?.paymentMethod)}, ссылка ${data?.redirect ?? "—"}`,
+  );
   if (!res.ok || !data?.redirect) {
     throw new Error(`Platega ответила ${res.status}`);
   }
-  if (data.transactionId) await setPaymentTx(id, data.transactionId);
+  if (data.transactionId) {
+    await setPaymentTx(id, data.transactionId);
+    const tx = await transaction(data.transactionId).catch((e) => ({ status: `не узнали: ${e instanceof Error ? e.message : e}` }));
+    console.info(`[pay] транзакция ${data.transactionId}: ${tx.status}`);
+  }
   return data.redirect;
 }
 
